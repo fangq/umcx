@@ -142,7 +142,7 @@ struct MCX_detect { // shared, read-only
         maxdetphotons = gcfg.issavedet ? gcfg.maxdetphotons : 0;
         detphotondatalen = (gcfg.savedetflag & dpDetID) + ((gcfg.savedetflag & dpPPath) > 0) * gcfg.mediumnum + (((gcfg.savedetflag & dpExitPos) > 0) + ((gcfg.savedetflag & dpExitDir) > 0)) * 3;
         ppathlen = (gcfg.issavedet && (gcfg.savedetflag & dpPPath)) ? gcfg.mediumnum : 0;
-        detphotondata = new float[maxdetphotons * detphotondatalen] {};
+        detphotondata = new float[maxdetphotons * detphotondatalen == 0 ? 1 : maxdetphotons * detphotondatalen] {};
     }
     ~MCX_detect () {
         delete [] detphotondata;
@@ -631,7 +631,7 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
     float* detphotonbuffer = (float*)calloc(sizeof(float), detdata.ppathlen);
 #endif
 #ifdef GPU_OFFLOAD
-    const int totaldetphotondatalen = gcfg.issavedet ? detdata.maxdetphotons * detdata.detphotondatalen : 0;
+    const int totaldetphotondatalen = issavedet ? detdata.maxdetphotons * detdata.detphotondatalen : 1;
     const int deviceid = JHAS(cfg["Session"], "DeviceID", int, 1) - 1, gridsize = JHAS(cfg["Session"], "ThreadNum", int, 10000) / JHAS(cfg["Session"], "BlockSize", int, 64);
 #ifdef _LIBGOMP_OMP_LOCK_DEFINED
     const int blocksize = JHAS(cfg["Session"], "BlockSize", int, 64) / 32;  // gcc nvptx offloading uses {32,teams_thread_limit,1} as blockdim
@@ -639,10 +639,10 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
     const int blocksize = JHAS(cfg["Session"], "BlockSize", int, 64); // nvc uses {num_teams,1,1} as griddim and {teams_thread_limit,1,1} as blockdim
 #endif
 #ifndef _OPENACC
-    #pragma omp target teams distribute parallel for num_teams(gridsize) thread_limit(blocksize) device(deviceid) \
-    map(to: pos) map(to: dir) map(to: seeds) map(to: gcfg) map(to: prop[0:gcfg.mediumnum]) map(to: detpos[0:gcfg.detnum]) reduction(+ : energyescape) firstprivate(ran, p) \
-    map(to: inputvol) map(to: inputvol.vol[0:inputvol.dimxyzt]) map(tofrom: outputvol) map(tofrom: outputvol.vol[0:outputvol.dimxyzt]) \
-    map(tofrom: detdata) map(tofrom: detdata.detphotondata[0:totaldetphotondatalen])
+    #pragma omp target data map(to: pos) map(to: dir) map(to: seeds) map(to: gcfg) map(to: prop[0:gcfg.mediumnum]) map(to: detpos[0:gcfg.detnum])
+    #pragma omp target data map(to: inputvol) map(tofrom: outputvol) map(tofrom: detdata)
+    #pragma omp target teams distribute parallel for num_teams(gridsize) thread_limit(blocksize) device(deviceid) reduction(+ : energyescape) firstprivate(ran, p) \
+    map(to: inputvol.vol[0:inputvol.dimxyzt]) map(tofrom: outputvol.vol[0:outputvol.dimxyzt]) map(tofrom: detdata.detphotondata[0:totaldetphotondatalen])
 #else
 #pragma acc parallel loop gang num_gangs(gridsize) vector_length(blocksize) deviceptr(pos, dir, seeds, prop, detpos, inputvol.vol, outputvol.vol, detdata.detphotondata) \
     reduction(+ : energyescape) firstprivate(ran, p) copyin(gcfg, inputvol, detdata) copyin(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt]) \
