@@ -638,7 +638,7 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
 #else
     const int blocksize = JHAS(cfg["Session"], "BlockSize", int, 64); // nvc uses {num_teams,1,1} as griddim and {teams_thread_limit,1,1} as blockdim
 #endif
-#ifdef _OPENACC
+#ifndef _OPENACC
     #pragma omp target teams distribute parallel for num_teams(gridsize) thread_limit(blocksize) device(deviceid) \
     map(to: pos) map(to: dir) map(to: seeds) map(to: gcfg) map(to: prop[0:gcfg.mediumnum]) map(to: detpos[0:gcfg.detnum]) reduction(+ : energyescape) firstprivate(ran, p) \
     map(to: inputvol) map(to: inputvol.vol[0:inputvol.dimxyzt]) map(tofrom: outputvol) map(tofrom: outputvol.vol[0:outputvol.dimxyzt]) \
