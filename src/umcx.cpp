@@ -715,7 +715,7 @@ int MCX_run_simulation(char* argv[], int argn = 1) {
     (templateid == 00) ? (energyescape = MCX_kernel<false, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata)) :
     ((templateid == 01) ? (energyescape = MCX_kernel<false, true>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata)) :
      ((templateid == 10) ? (energyescape = MCX_kernel<true, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata)) :
-      (templateid == 11),  (energyescape = MCX_kernel<true, true>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata))));
+      /*templateid == 11*/  (energyescape = MCX_kernel<true, true>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata))));
 
     float normalizer = (gcfg.outputtype == otEnergy) ? (1.f / nphoton) : ((gcfg.outputtype == otFluenceRate) ? gcfg.rtstep / (nphoton * gcfg.unitinmm * gcfg.unitinmm) : 1.f / (nphoton * gcfg.unitinmm * gcfg.unitinmm));
     printf("simulated energy %.2f, speed %.2f photon/ms, duration %.6f ms, normalizer %.6f, detected %d, absorbed %.6f%%\n", (double)nphoton, nphoton / timer.elapse(), timer.elapse(), normalizer, detdata.savedcount(), (nphoton - energyescape) / nphoton * 100.);
