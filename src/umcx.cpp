@@ -19,9 +19,6 @@
 #include <chrono>
 #include <set>
 #include <map>
-#ifdef _OPENMP
-    #include <omp.h>
-#endif
 #include "nlohmann/json.hpp"
 
 #define ONE_OVER_C0          3.335640951981520e-12f
@@ -34,6 +31,12 @@
 #define DET_MASK             0x80000000u              /**< mask of the sign bit to get the detector */
 #define MED_MASK             0x7FFFFFFFu              /**< mask of the remaining bits to get the medium index */
 #define PASS                 (void(0))                /**< no operation, do nothing */
+
+#ifndef _OPENACC
+    #define _PRAGMA_OMPACC_(settings)   _Pragma("omp " #settings))
+#else
+    #define _PRAGMA_OMPACC_(settings)   _Pragma("acc " #settings))
+#endif
 
 using json = nlohmann::ordered_json;
 
@@ -110,7 +113,11 @@ struct MCX_volume { // shared, read-only
         return vol[idx];
     }
     void add(const T val, const int idx) {
+#ifdef _OPENACC
+#pragma acc atomic
+#else
         #pragma omp atomic
+#endif
         vol[idx] += val;
     }
     void mask(const T val, const int idx) {
@@ -142,7 +149,11 @@ struct MCX_detect { // shared, read-only
     }
     void addphoton(float detid, float4& pos, float4& vec, float ppath[], const MCX_param& gcfg)  {
         uint32_t baseaddr = 0;
+#ifdef _OPENACC
+#pragma acc atomic capture
+#else
         #pragma omp atomic capture
+#endif
         baseaddr = detectedphoton++;
 
         if (baseaddr < maxdetphotons) {
@@ -472,7 +483,11 @@ struct MCX_userio {
 
                 for (const auto& obj : cfg["Shapes"])
                     if (shapeparser.find(obj.begin().key()) != shapeparser.end()) {
+#ifdef _OPENACC
+#pragma acc parallel loop collapse(2)
+#else
                         #pragma omp parallel for collapse(2)
+#endif
 
                         for (uint32_t z = 0; z < domain.size.z; z++)
                             for (uint32_t y = 0; y < domain.size.y; y++)
@@ -612,6 +627,9 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
     const float4 dir = {cfg["Optode"]["Source"]["Dir"][0].get<float>(), cfg["Optode"]["Source"]["Dir"][1].get<float>(), cfg["Optode"]["Source"]["Dir"][2].get<float>(), 0.f};
     MCX_rand ran(seeds.x, seeds.y, seeds.z, seeds.w);
     MCX_photon p(pos, dir);
+#ifdef _OPENACC
+    float* detphotonbuffer = (float*)calloc(sizeof(float), detdata.ppathlen);
+#endif
 #ifdef GPU_OFFLOAD
     const int totaldetphotondatalen = gcfg.issavedet ? detdata.maxdetphotons * detdata.detphotondatalen : 0;
     const int deviceid = JHAS(cfg["Session"], "DeviceID", int, 1) - 1, gridsize = JHAS(cfg["Session"], "ThreadNum", int, 10000) / JHAS(cfg["Session"], "BlockSize", int, 64);
@@ -620,30 +638,47 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
 #else
     const int blocksize = JHAS(cfg["Session"], "BlockSize", int, 64); // nvc uses {num_teams,1,1} as griddim and {teams_thread_limit,1,1} as blockdim
 #endif
+#ifdef _OPENACC
     #pragma omp target teams distribute parallel for num_teams(gridsize) thread_limit(blocksize) device(deviceid) \
     map(to: pos) map(to: dir) map(to: seeds) map(to: gcfg) map(to: prop[0:gcfg.mediumnum]) map(to: detpos[0:gcfg.detnum]) reduction(+ : energyescape) firstprivate(ran, p) \
     map(to: inputvol) map(to: inputvol.vol[0:inputvol.dimxyzt]) map(tofrom: outputvol) map(tofrom: outputvol.vol[0:outputvol.dimxyzt]) \
     map(tofrom: detdata) map(tofrom: detdata.detphotondata[0:totaldetphotondatalen])
 #else
+#pragma acc parallel loop gang num_gangs(gridsize) vector_length(blocksize) deviceptr(pos, dir, seeds, prop, detpos, inputvol.vol, outputvol.vol, detdata.detphotondata) \
+    reduction(+ : energyescape) firstprivate(ran, p) copyin(gcfg, inputvol, detdata) copyin(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt]) \
+    copy(outputvol, outputvol.vol[0:outputvol.dimxyzt]) copy(detdata, detdata.detphotondata[0:totaldetphotondatalen]) firstprivate(detphotonbuffer[0:detdata.ppathlen])
+#endif
+#else
+#ifdef _OPENACC
+#pragma acc parallel loop reduction(+ : energyescape) firstprivate(ran, p)
+#else
     #pragma omp parallel for reduction(+ : energyescape) firstprivate(ran, p)
+#endif
 #endif
 
     for (uint64_t i = 0; i < nphoton; i++) {
+#ifndef _OPENACC
 #ifdef USE_MALLOC
         float* detphotonbuffer = (float*)malloc(sizeof(float) * detdata.ppathlen * issavedet);
         memset(detphotonbuffer, 0, sizeof(float) * detdata.ppathlen * issavedet);
 #else
-        float detphotonbuffer[issavedet ? 10 : 0] = {};   // TODO: if changing 10 to detdata.ppathlen, speed of nvc++ built binary drops by 5x to 10x
+        float detphotonbuffer[issavedet ? 10 : 1] = {};   // TODO: if changing 10 to detdata.ppathlen, speed of nvc++ built binary drops by 5x to 10x
+#endif
 #endif
         ran.reseed(seeds.x ^ i, seeds.y | i, seeds.z ^ i, seeds.w | i);
         p.launch(pos, dir);
         p.run<isreflect, issavedet>(inputvol, outputvol, prop, detpos, detdata, detphotonbuffer, ran, gcfg);
         energyescape += p.pos.w;
+#ifndef _OPENACC
 #ifdef USE_MALLOC
         free(detphotonbuffer);
 #endif
+#endif
     }
 
+#ifdef _OPENACC
+    free(detphotonbuffer);
+#endif
     return energyescape;
 }
 /// Main MCX simulation function, parsing user inputs via string arrays in argv[argn], can be called repeatedly

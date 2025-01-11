@@ -8,8 +8,22 @@ BINARY = umcx
 SRC = umcx.cpp
 OBJS = $(SRC:.cpp=.o)
 
+OMPACC=-fopenmp
+
+ifneq (,$(filter $(MAKECMDGOALS),nvc))
+    OMPACC=-mp=gpu
+endif
+
+ifeq ($(findstring acc,$(BACKEND)), acc)
+    ifneq (,$(filter $(MAKECMDGOALS),nvc))
+        OMPACC=-acc=gpu
+    else
+        OMPACC=-fopenacc
+    endif
+endif
+
 nvc: CXX=nvc++
-nvc: CXXFLAGS+=-mp=gpu -Minfo=mp,accel -Minline -gpu=mem:managed,ptxinfo -static-nvidia
+nvc: CXXFLAGS+=-Minfo=mp,accel -Minline -gpu=mem:managed,ptxinfo -static-nvidia
 amd: CXXFLAGS+=-foffload=amdgcn-amdhsa="-march=gfx906" -foffload="-lm" -fcf-protection=none -fno-stack-protector
 nvidiaclang: CXX=clang++
 nvidiaclang: CXXFLAGS+=-fopenmp-targets=nvptx64 --cuda-gpu-arch=sm_50
@@ -17,7 +31,7 @@ nvidia: CXXFLAGS+=-foffload=nvptx-none -foffload="-lm" -fcf-protection=none -fno
 nvidiaclang nvidia amd nvc: CXXFLAGS+=-DGPU_OFFLOAD
 nvidiaclang nvidia amd nvc: omp
 
-omp: CXXFLAGS+=-fopenmp
+omp: CXXFLAGS+=$(OMPACC)
 debugmulti multi: omp
 debugmulti multi: CXXFLAGS+=-foffload=disable
 debugsingle debugmulti: CXXFLAGS+=-DDEBUG
