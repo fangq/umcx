@@ -32,10 +32,11 @@
 #define MED_MASK             0x7FFFFFFFu              /**< mask of the remaining bits to get the medium index */
 #define PASS                 (void(0))                /**< no operation, do nothing */
 
+#define PRAGMA(x) _Pragma(#x)
 #ifndef _OPENACC
-    #define _PRAGMA_OMPACC_(settings)   _Pragma("omp " #settings))
+    #define _PRAGMA_OMPACC_(settings)   PRAGMA(omp settings)
 #else
-    #define _PRAGMA_OMPACC_(settings)   _Pragma("acc " #settings))
+    #define _PRAGMA_OMPACC_(settings)   PRAGMA(acc settings)
 #endif
 
 using json = nlohmann::ordered_json;
@@ -113,11 +114,7 @@ struct MCX_volume { // shared, read-only
         return vol[idx];
     }
     void add(const T val, const int idx) {
-#ifdef _OPENACC
-#pragma acc atomic
-#else
-        #pragma omp atomic
-#endif
+        _PRAGMA_OMPACC_(atomic)
         vol[idx] += val;
     }
     void mask(const T val, const int idx) {
@@ -149,11 +146,7 @@ struct MCX_detect { // shared, read-only
     }
     void addphoton(float detid, float4& pos, float4& vec, float ppath[], const MCX_param& gcfg)  {
         uint32_t baseaddr = 0;
-#ifdef _OPENACC
-#pragma acc atomic capture
-#else
-        #pragma omp atomic capture
-#endif
+        _PRAGMA_OMPACC_(atomic capture)
         baseaddr = detectedphoton++;
 
         if (baseaddr < maxdetphotons) {
@@ -628,15 +621,16 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
     MCX_rand ran(seeds.x, seeds.y, seeds.z, seeds.w);
     MCX_photon p(pos, dir);
 #ifdef _OPENACC
+    int ppathlen = detdata.ppathlen;   // define a local int for the path length
     float* detphotonbuffer = (float*)calloc(sizeof(float), detdata.ppathlen);
 #endif
 #ifdef GPU_OFFLOAD
     const int totaldetphotondatalen = issavedet ? detdata.maxdetphotons * detdata.detphotondatalen : 1;
     const int deviceid = JHAS(cfg["Session"], "DeviceID", int, 1) - 1, gridsize = JHAS(cfg["Session"], "ThreadNum", int, 10000) / JHAS(cfg["Session"], "BlockSize", int, 64);
 #ifdef _LIBGOMP_OMP_LOCK_DEFINED
-    const int blocksize = JHAS(cfg["Session"], "BlockSize", int, 64) / 32;  // gcc nvptx offloading uses {32,teams_thread_limit,1} as blockdim
+    const int blocksize = cfg["Session"].value("BlockSize", 64) / 32;  // gcc nvptx offloading uses {32,teams_thread_limit,1} as blockdim
 #else
-    const int blocksize = JHAS(cfg["Session"], "BlockSize", int, 64); // nvc uses {num_teams,1,1} as griddim and {teams_thread_limit,1,1} as blockdim
+    const int blocksize = cfg["Session"].value("BlockSize", 64); // nvc uses {num_teams,1,1} as griddim and {teams_thread_limit,1,1} as blockdim
 #endif
 #ifndef _OPENACC
     #pragma omp target data map(to: pos) map(to: dir) map(to: seeds) map(to: gcfg) map(to: prop[0:gcfg.mediumnum]) map(to: detpos[0:gcfg.detnum])
@@ -644,9 +638,12 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
     #pragma omp target teams distribute parallel for num_teams(gridsize) thread_limit(blocksize) device(deviceid) reduction(+ : energyescape) firstprivate(ran, p) \
     map(to: inputvol.vol[0:inputvol.dimxyzt]) map(tofrom: outputvol.vol[0:outputvol.dimxyzt]) map(tofrom: detdata.detphotondata[0:totaldetphotondatalen])
 #else
-#pragma acc parallel loop gang num_gangs(gridsize) vector_length(blocksize) deviceptr(pos, dir, seeds, prop, detpos, inputvol.vol, outputvol.vol, detdata.detphotondata) \
-    reduction(+ : energyescape) firstprivate(ran, p) copyin(gcfg, inputvol, detdata) copyin(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt]) \
-    copy(outputvol, outputvol.vol[0:outputvol.dimxyzt]) copy(detdata, detdata.detphotondata[0:totaldetphotondatalen]) firstprivate(detphotonbuffer[0:detdata.ppathlen])
+#pragma acc parallel loop gang num_gangs(gridsize) vector_length(blocksize) \
+    reduction(+ : energyescape) firstprivate(ran, p) copyin(gcfg, inputvol, detdata) \
+    copyin(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt]) \
+    copy(outputvol, outputvol.vol[0:outputvol.dimxyzt]) \
+    copy(detdata, detdata.detphotondata[0:totaldetphotondatalen]) \
+    firstprivate(detphotonbuffer[0:ppathlen])
 #endif
 #else
 #ifdef _OPENACC
