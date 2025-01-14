@@ -476,12 +476,6 @@ struct MCX_userio {
 
                 for (const auto& obj : cfg["Shapes"])
                     if (shapeparser.find(obj.begin().key()) != shapeparser.end()) {
-#ifdef _OPENACC
-#pragma acc parallel loop collapse(2)
-#else
-                        #pragma omp parallel for collapse(2)
-#endif
-
                         for (uint32_t z = 0; z < domain.size.z; z++)
                             for (uint32_t y = 0; y < domain.size.y; y++)
                                 for (uint32_t x = 0; x < domain.size.x; x++) {
@@ -626,7 +620,7 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
 #endif
 #ifdef GPU_OFFLOAD
     const int totaldetphotondatalen = issavedet ? detdata.maxdetphotons * detdata.detphotondatalen : 1;
-    const int deviceid = JHAS(cfg["Session"], "DeviceID", int, 1) - 1, gridsize = JHAS(cfg["Session"], "ThreadNum", int, 10000) / JHAS(cfg["Session"], "BlockSize", int, 64);
+    const int deviceid = JHAS(cfg["Session"], "DeviceID", int, 1) - 1, gridsize = JHAS(cfg["Session"], "ThreadNum", int, 100000) / JHAS(cfg["Session"], "BlockSize", int, 64);
 #ifdef _LIBGOMP_OMP_LOCK_DEFINED
     const int blocksize = cfg["Session"].value("BlockSize", 64) / 32;  // gcc nvptx offloading uses {32,teams_thread_limit,1} as blockdim
 #else
@@ -638,12 +632,10 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
     #pragma omp target teams distribute parallel for num_teams(gridsize) thread_limit(blocksize) device(deviceid) reduction(+ : energyescape) firstprivate(ran, p) \
     map(to: inputvol.vol[0:inputvol.dimxyzt]) map(tofrom: outputvol.vol[0:outputvol.dimxyzt]) map(tofrom: detdata.detphotondata[0:totaldetphotondatalen])
 #else
+#pragma acc data copyin(gcfg, inputvol) copyin(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt]) \
+    copy(outputvol, outputvol.vol[0:outputvol.dimxyzt]) copy(detdata, detdata.detphotondata[0:totaldetphotondatalen])
 #pragma acc parallel loop gang num_gangs(gridsize) vector_length(blocksize) \
-    reduction(+ : energyescape) firstprivate(ran, p) copyin(gcfg, inputvol, detdata) \
-    copyin(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt]) \
-    copy(outputvol, outputvol.vol[0:outputvol.dimxyzt]) \
-    copy(detdata, detdata.detphotondata[0:totaldetphotondatalen]) \
-    firstprivate(detphotonbuffer[0:ppathlen])
+    reduction(+ : energyescape) firstprivate(ran, p) firstprivate(detphotonbuffer[0:ppathlen])
 #endif
 #else
 #ifdef _OPENACC
@@ -661,6 +653,8 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
 #else
         float detphotonbuffer[issavedet ? 10 : 1] = {};   // TODO: if changing 10 to detdata.ppathlen, speed of nvc++ built binary drops by 5x to 10x
 #endif
+#else
+        memset(detphotonbuffer, 0, sizeof(float) * detdata.ppathlen * issavedet);
 #endif
         ran.reseed(seeds.x ^ i, seeds.y | i, seeds.z ^ i, seeds.w | i);
         p.launch(pos, dir);
