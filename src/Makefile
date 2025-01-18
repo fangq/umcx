@@ -26,7 +26,7 @@ ifneq (,$(filter $(ACC),on))
 endif
 
 nvc: CXX=nvc++
-nvc: CXXFLAGS+=-Minfo=mp,accel -Minline -gpu=mem:managed,ptxinfo -static-nvidia
+nvc: CXXFLAGS+=-Minfo=mp,accel -Minline -gpu=mem:managed,ptxinfo,ccall -static-nvidia
 amd: CXXFLAGS+=-foffload=amdgcn-amdhsa="-march=gfx906" -foffload="-lm" -fcf-protection=none -fno-stack-protector
 nvidiaclang: CXX=clang++
 nvidiaclang: CXXFLAGS+=-fopenmp-targets=nvptx64 --cuda-gpu-arch=sm_50
