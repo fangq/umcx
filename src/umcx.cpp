@@ -231,9 +231,15 @@ struct MCX_photon { // per thread
             rvec.x = (FLT_PI * 2.f) * ran.rand01();
             sincosf(rvec.x, &len.z, &len.w);
             rvec.x = sqrtf(ran.rand01() * fabsf(gcfg.srcparam1.x * gcfg.srcparam1.x - gcfg.srcparam1.y * gcfg.srcparam1.y) + gcfg.srcparam1.y * gcfg.srcparam1.y);
-            len.x = 1.f - vec.z * vec.z;
-            len.y = rvec.x / sqrtf(len.x);
-            pos = float4(pos.x + len.y * (vec.x * vec.z * len.w - vec.y * len.z), pos.y + len.y * (vec.y * vec.z * len.w + vec.x * len.z), pos.z - len.y * len.x * len.w, pos.w);
+
+            if (vec.z > -1.f + FLT_EPSILON && vec.z < 1.f - FLT_EPSILON) {
+                len.x = 1.f - vec.z * vec.z;
+                len.y = rvec.x / sqrtf(len.x);
+                pos = float4(pos.x + len.y * (vec.x * vec.z * len.w - vec.y * len.z), pos.y + len.y * (vec.y * vec.z * len.w + vec.x * len.z), pos.z - len.y * len.x * len.w, pos.w);
+            } else {
+                pos.x += rvec.x * len.w;
+                pos.y += rvec.x * len.z;
+            }
         } else if (gcfg.srctype == stPlanar) {                      //< planar source
             len.x = ran.rand01();
             len.y = ran.rand01();
@@ -242,11 +248,11 @@ struct MCX_photon { // per thread
 
         rvec = float4(1.f / v0.x, 1.f / v0.y, 1.f / v0.z, 0.f);
         len = float4(NAN, 0.f, 0.f, pos.w);
-        ipos = short4((short)p0.x, (short)p0.y, (short)p0.z, -1);
+        ipos = short4((short)pos.x, (short)pos.y, (short)pos.z, -1);
     }
     template<const bool isreflect, const bool issavedet>    //< main function to run a single photon from lunch to termination
     void run(MCX_volume<int>& invol, MCX_volume<float>& outvol, MCX_medium props[], const float4 detpos[], MCX_detect& detdata, float detphotonbuffer[], MCX_rand& ran, const MCX_param& gcfg) {
-        lastvoxelidx = outvol.index(ipos.x, ipos.y, ipos.z, 0);
+        lastvoxelidx = invol.index(ipos.x, ipos.y, ipos.z, 0);
 
         if (lastvoxelidx < 0 && skip(invol) < 0.f) { //< widefield source, launch position is outside of the domain bounding box
             return; // ray never intersect with the voxel domain bounding box
@@ -651,10 +657,11 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
         } else if (bmid == bm_skinvessel) {
             cfg["Shapes"] = R"([{"Grid": {"Size": [200, 200, 200], "Tag": 1}}, {"ZLayers": [[1, 20, 1], [21, 32, 4], [33, 200, 3]]}, {"Cylinder": {"Tag": 2, "C0": [0, 100.5, 100.5], "C1": [200, 100.5, 100.5], "R": 20}}])"_json;
             cfg["Forward"] = {{"T0", 0.0}, {"T1", 5e-8}, {"Dt", 5e-8}};
-            cfg["Optode"]["Source"] = {{"Type", "disk"}, {"Pos", {100, 100, 20}}, {"Dir", {0, 0, 1}}, {"Param1", {60, 0, 0, 0}}};
-            cfg["Domain"]["LengthUnit"] = 0.005;
-            cfg["Domain"]["Media"] = {{{"mua", 1e-5}, {"mus", 0.0}, {"g", 1.0}, {"n", 1.37}}, {{"mua", 3.564e-05}, {"mus", 1.0}, {"g", 1.0}, {"n", 1.37}}, {{"mua", 23.05426549}, {"mus", 9.398496241}, {"g", 0.9}, {"n", 1.37}},
-                {{"mua", 0.04584957865}, {"mus", 35.65405549}, {"g", 0.9}, {"n", 1.37}}, {{"mua", 1.657237447}, {"mus", 37.59398496}, {"g", 0.9}, {"n", 1.37}}
+            cfg["Optode"] = {{"Source", {{"Type", "disk"}, {"Pos", {100, 100, 20}}, {"Dir", {0, 0, 1}}, {"Param1", {60, 0, 0, 0}}}}};
+            cfg["Domain"] = {{"Media", {{{"mua", 0.002}, {"mus", 0.0}, {"g", 1.0}, {"n", 1.37}}, {{"mua", 3.564e-05}, {"mus", 1.0}, {"g", 1.0}, {"n", 1.37}}, {{"mua", 23.05426549}, {"mus", 9.398496241}, {"g", 0.9}, {"n", 1.37}},
+                        {{"mua", 0.04584957865}, {"mus", 35.65405549}, {"g", 0.9}, {"n", 1.37}}, {{"mua", 1.657237447}, {"mus", 37.59398496}, {"g", 0.9}, {"n", 1.37}}
+                    }
+                }, {"LengthUnit", 0.005},  {"Dim", {200, 200, 200}}
             };
         } else if (bmid == bm_sphshells) {
             cfg["Shapes"] = R"([{"Grid": {"Size": [60, 60, 60], "Tag": 1}}, {"Sphere": {"O": [30, 30, 30], "R": 25, "Tag": 2}}, {"Sphere": {"O": [30, 30, 30], "R": 23, "Tag": 3}}, {"Sphere": {"O": [30, 30, 30], "R": 10, "Tag": 4}}])"_json;
@@ -794,7 +801,7 @@ int MCX_run_simulation(char* argv[], int argn = 1) {
         /*.srcparam1*/ {srcparam1[0], srcparam1[1], srcparam1[2], srcparam1[3]}, /*.srcparam2*/ {srcparam2[0], srcparam2[1], srcparam2[2], srcparam2[3]}
     };
     MCX_volume<int> inputvol = io.domain;
-    MCX_volume<float> outputvol(io.cfg["Domain"]["Dim"][0].get<int>(), io.cfg["Domain"]["Dim"][1].get<int>(), io.cfg["Domain"]["Dim"][2].get<int>(), gcfg.maxgate);
+    MCX_volume<float> outputvol(inputvol.size.x, inputvol.size.y, inputvol.size.z, gcfg.maxgate);
     MCX_detect detdata(gcfg);
     MCX_medium* prop = new MCX_medium[gcfg.mediumnum];
     float4* detpos = new float4[gcfg.detnum];
