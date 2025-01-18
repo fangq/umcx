@@ -1,11 +1,14 @@
 ROOTDIR ?= ..
 MCXDIR  ?= $(ROOTDIR)
 OUTPUT_DIR=$(MCXDIR)/bin
+DOC_DIR=$(MCXDIR)/doc
 MKDIR = mkdir
+DOXYGEN = doxygen
 
 CXXFLAGS += -g -Wall -Wextra -pedantic -std=c++11 -O3
 BINARY = umcx
 SRC = umcx.cpp
+DOCCFG = umcxdoc.cfg
 OBJS = $(SRC:.cpp=.o)
 
 OMPACC=-fopenmp
@@ -51,8 +54,14 @@ $(OUTPUT_DIR)/$(BINARY): makedirs $(OBJS)
 %.o: %.cpp
 	$(CXX)  $(CXXFLAGS) $(USERCXXFLAGS) -c $< -o $@
 
+makedocdir:
+	@if test ! -d $(DOC_DIR); then $(MKDIR) $(DOC_DIR); fi
+
+doc: makedocdir
+	$(DOXYGEN) $(DOCCFG)
+
 clean:
-	rm -rf $(OUTPUT_DIR)/$(BINARY) *.o
+	rm -rf $(OUTPUT_DIR)/$(BINARY) *.o $(DOC_DIR)/*
 
 # derived the astyle settings from https://github.com/nlohmann/json
 pretty:
