@@ -4,12 +4,15 @@ OUTPUT_DIR=$(MCXDIR)/bin
 DOC_DIR=$(MCXDIR)/doc
 MKDIR = mkdir
 DOXYGEN = doxygen
+DLLFLAG=-fPIC
 
-CXXFLAGS += -g -Wall -Wextra -pedantic -std=c++11 -O3
+CXXFLAGS += -g -Wall -Wextra -pedantic -std=c++11 -O3 -Izmat -Izmat/miniz
 BINARY = umcx
-SRC = umcx.cpp
+SRC=umcx.cpp
 DOCCFG = umcxdoc.cfg
-OBJS = $(SRC:.cpp=.o)
+ZMATLIB    :=lib/libzmat.a
+OBJSUFFIX = .o
+OBJS = $(SRC:.cpp=$(OBJSUFFIX))
 
 OMPACC=-fopenmp
 
@@ -45,13 +48,13 @@ all: multi
 makedirs:
 	@if test ! -d $(OUTPUT_DIR); then $(MKDIR) $(OUTPUT_DIR); fi
 
-$(OUTPUT_DIR)/$(BINARY): makedirs $(OBJS)
-	$(CXX)  $(CXXFLAGS) -o $(OUTPUT_DIR)/$(BINARY) $(OBJS) $(USERLINKFLAGS)
+$(OUTPUT_DIR)/$(BINARY): makedirs $(ZMATLIB) $(OBJS)
+	$(CXX)  $(CXXFLAGS) -o $(OUTPUT_DIR)/$(BINARY) $(OBJS) $(ZMATLIB) $(USERLINKFLAGS)
 
-%.o: %.c
+%$(OBJSUFFIX): %.c
 	$(CC)  $(CFLAGS) -c $< -o $@
 
-%.o: %.cpp
+%$(OBJSUFFIX): %.cpp
 	$(CXX)  $(CXXFLAGS) $(USERCXXFLAGS) -c $< -o $@
 
 makedocdir:
@@ -60,8 +63,12 @@ makedocdir:
 doc: makedocdir
 	$(DOXYGEN) $(DOCCFG)
 
+$(ZMATLIB):
+	-$(MAKE) -C zmat lib AR=ar CPPOPT="$(DLLFLAG) -g -O3" USERLINKOPT=
+
 clean:
-	rm -rf $(OUTPUT_DIR)/$(BINARY) *.o $(DOC_DIR)/*
+	rm -rf $(OUTPUT_DIR)/$(BINARY) *.o $(DOC_DIR)/* lib/*
+	$(MAKE) -C zmat clean
 
 # derived the astyle settings from https://github.com/nlohmann/json
 pretty:
