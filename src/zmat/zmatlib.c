@@ -53,7 +53,7 @@
 #ifndef NO_ZLIB
     #include "zlib.h"
 #else
-    #include "miniz.h"
+    #include "../miniz/miniz.hpp"
     #define GZIP_HEADER_SIZE 10
 #endif
 
@@ -137,7 +137,8 @@ const char* zmat_errcode[] = {
     "blosc2 error, see info.status for error flag, often a result of mismatch in compression method",/*-8*/
     "zstd error, see info.status for error flag, often a result of mismatch in compression method",/*-9*/
     "miniz error, see info.status for error flag, often a result of mismatch in compression method",/*-10*/
-    "unsupported method" /*-999*/
+    "unsupported method", /*-999*/
+    "zmatlib: unknown error"
 };
 
 /**
@@ -147,10 +148,10 @@ const char* zmat_errcode[] = {
  */
 
 char* zmat_error(int id) {
-    if (id >= 0 && id < (sizeof(zmat_errcode) / sizeof(zmat_errcode[0]))) {
+    if (id >= 0 && id < (int)(sizeof(zmat_errcode) / sizeof(zmat_errcode[0])) - 1) {
         return (char*)(zmat_errcode[id]);
     } else {
-        return "zmatlib: unknown error";
+        return (char*)(zmat_errcode[(int)(sizeof(zmat_errcode) / sizeof(zmat_errcode[0])) - 1]);
     }
 }
 
@@ -294,7 +295,7 @@ int zmat_run(const size_t inputsize, unsigned char* inputstr, size_t* outputsize
 
                 /* update the final output buffer size */
                 *outputsize += GZIP_HEADER_SIZE + 8;
-                *outputbuf = out_buf;
+                *outputbuf = (unsigned char*)out_buf;
             } else {
 #endif
 
@@ -1087,7 +1088,7 @@ int miniz_gzip_uncompress(void* in_data, size_t in_len,
     }
 
     /* Magic bytes */
-    p = in_data;
+    p = (unsigned char*)in_data;
 
     if (p[0] != 0x1F || p[1] != 0x8B) {
         return -2;
@@ -1122,7 +1123,7 @@ int miniz_gzip_uncompress(void* in_data, size_t in_len,
     /* Skip file name if present */
     if (flg & FNAME) {
         do {
-            if (start - p >= in_len) {
+            if ((size_t)(start - p) >= in_len) {
                 return -6;
             }
         } while (*start++);
@@ -1131,7 +1132,7 @@ int miniz_gzip_uncompress(void* in_data, size_t in_len,
     /* Skip file comment if present */
     if (flg & FCOMMENT) {
         do {
-            if (start - p >= in_len) {
+            if ((size_t)(start - p) >= in_len) {
                 return -6;
             }
         } while (*start++);
@@ -1139,7 +1140,7 @@ int miniz_gzip_uncompress(void* in_data, size_t in_len,
 
     /* Check header crc if present */
     if (flg & FHCRC) {
-        if (start - p > in_len - 2) {
+        if ((size_t)(start - p) > in_len - 2) {
             return -7;
         }
 
@@ -1178,9 +1179,9 @@ int miniz_gzip_uncompress(void* in_data, size_t in_len,
     zip_len = (p + in_len) - start - 8;
 
     memset(&stream, 0, sizeof(stream));
-    stream.next_in = zip_data;
+    stream.next_in = (const unsigned char*)zip_data;
     stream.avail_in = zip_len;
-    stream.next_out = out_buf;
+    stream.next_out = (unsigned char*)out_buf;
     stream.avail_out = out_size;
 
     status = mz_inflateInit2(&stream, -Z_DEFAULT_WINDOW_BITS);
@@ -1208,7 +1209,7 @@ int miniz_gzip_uncompress(void* in_data, size_t in_len,
     mz_inflateEnd(&stream);
 
     /* Validate message CRC vs inflated data CRC */
-    crc_out = mz_crc32(MZ_CRC32_INIT, out_buf, dlen);
+    crc_out = mz_crc32(MZ_CRC32_INIT, (const unsigned char*)out_buf, dlen);
 
     if (crc_out != crc) {
         free(out_buf);

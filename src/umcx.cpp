@@ -19,7 +19,8 @@
 #include <chrono>
 #include <set>
 #include <map>
-#include "zmat/zmatlib.h"
+#include "miniz/miniz.hpp"
+#include "zmat/zmatlib.hpp"
 #include "nlohmann/json.hpp"
 
 #define ONE_OVER_C0          3.335640951981520e-12f
@@ -108,7 +109,7 @@ struct MCX_volume { // shared, read-only
     void reshape(uint32_t Nx, uint32_t Ny, uint32_t Nz, uint32_t Nt = 1, T value = 0.0f) {
         size = dim4(Nx, Ny, Nz, Nt);
         dimxy = Nx * Ny;
-        dimxyz = dimxy * Ny;
+        dimxyz = dimxy * Nz;
         dimxyzt = dimxyz * Nt;
         delete [] vol;
         vol = new T[dimxyzt] {};

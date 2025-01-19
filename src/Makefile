@@ -6,11 +6,10 @@ MKDIR = mkdir
 DOXYGEN = doxygen
 DLLFLAG=-fPIC
 
-CXXFLAGS += -g -Wall -Wextra -pedantic -std=c++11 -O3 -Izmat -Izmat/miniz
+CXXFLAGS += -g -Wall -Wextra -pedantic -std=c++11 -O3 -DNO_LZMA -DNO_ZLIB -DNO_BLOSC2 -DNO_ZSTD -DNO_LZ4
 BINARY = umcx
 SRC=umcx.cpp
 DOCCFG = umcxdoc.cfg
-ZMATLIB    :=lib/libzmat.a
 OBJSUFFIX = .o
 OBJS = $(SRC:.cpp=$(OBJSUFFIX))
 
@@ -48,8 +47,8 @@ all: multi
 makedirs:
 	@if test ! -d $(OUTPUT_DIR); then $(MKDIR) $(OUTPUT_DIR); fi
 
-$(OUTPUT_DIR)/$(BINARY): makedirs $(ZMATLIB) $(OBJS)
-	$(CXX)  $(CXXFLAGS) -o $(OUTPUT_DIR)/$(BINARY) $(OBJS) $(ZMATLIB) $(USERLINKFLAGS)
+$(OUTPUT_DIR)/$(BINARY): makedirs $(OBJS)
+	$(CXX)  $(CXXFLAGS) -o $(OUTPUT_DIR)/$(BINARY) $(OBJS) $(USERLINKFLAGS)
 
 %$(OBJSUFFIX): %.c
 	$(CC)  $(CFLAGS) -c $< -o $@
@@ -63,12 +62,8 @@ makedocdir:
 doc: makedocdir
 	$(DOXYGEN) $(DOCCFG)
 
-$(ZMATLIB):
-	-$(MAKE) -C zmat lib AR=ar CPPOPT="$(DLLFLAG) -g -O3" USERLINKOPT=
-
 clean:
-	rm -rf $(OUTPUT_DIR)/$(BINARY) *.o $(DOC_DIR)/* lib/*
-	$(MAKE) -C zmat clean
+	rm -rf $(OUTPUT_DIR)/$(BINARY) *.o $(DOC_DIR)/*
 
 # derived the astyle settings from https://github.com/nlohmann/json
 pretty:
@@ -92,6 +87,6 @@ pretty:
 	    --suffix=none \
 	    --formatted \
 	    --break-blocks \
-	   "*.cpp"
+	   "*.cpp" "miniz/*.hpp" "zmat/*.hpp"
 
 .DEFAULT_GOAL=all
