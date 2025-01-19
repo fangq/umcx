@@ -94,27 +94,25 @@ struct MCX_param {
 /// MCX_volume class manages input and output volume
 template<class T>
 struct MCX_volume { // shared, read-only
-    dim4 size;
-    uint64_t dimxy = 0, dimxyz = 0, dimxyzt = 0;
+    dim4 size = {0, 0, 0, 0};
+    dim4 stride = {0, 0, 0, 0};
     T* vol = nullptr;
 
     MCX_volume() {}
     MCX_volume(MCX_volume& v) {
         reshape(v.size.x, v.size.y, v.size.z, v.size.w);
-        std::memcpy(vol, v.vol, sizeof(T)*dimxyzt);
+        std::memcpy(vol, v.vol, sizeof(T) * stride.w * size.w);
     }
     MCX_volume(uint32_t Nx, uint32_t Ny, uint32_t Nz, uint32_t Nt = 1, T value = 0.0f) {
         reshape(Nx, Ny, Nz, Nt, value);
     }
     void reshape(uint32_t Nx, uint32_t Ny, uint32_t Nz, uint32_t Nt = 1, T value = 0.0f) {
         size = dim4(Nx, Ny, Nz, Nt);
-        dimxy = Nx * Ny;
-        dimxyz = dimxy * Nz;
-        dimxyzt = dimxyz * Nt;
+        stride = dim4(1, Nx, Nx * Ny, Nx * Ny * Nz);
         delete [] vol;
-        vol = new T[dimxyzt] {};
+        vol = new T[stride.w] {};
 
-        for (uint64_t i = 0; i < dimxyzt; i++) {
+        for (uint32_t i = 0; i < stride.w * size.w; i++) {
             vol[i] = value;
         }
     }
@@ -122,7 +120,7 @@ struct MCX_volume { // shared, read-only
         delete [] vol;
     }
     int index(short ix, short iy, short iz, int it = 0) { // when outside the volume, return -1, otherwise, return 1d index
-        return !(ix < 0 || iy < 0 || iz < 0 || ix >= (short)size.x || iy >= (short)size.y || iz >= (short)size.z || it >= (int)size.w) ? (int)(it * dimxyz + iz * dimxy + iy * size.x + ix) : -1;
+        return !(ix < 0 || iy < 0 || iz < 0 || ix >= (short)size.x || iy >= (short)size.y || iz >= (short)size.z || it >= (int)size.w) ? (int)(it * stride.w + iz * stride.z + iy * stride.y + ix * stride.x) : -1;
     }
     T& get(const int idx) { // must be inside the volume
         return vol[idx];
@@ -135,9 +133,12 @@ struct MCX_volume { // shared, read-only
         vol[idx] = (val) ? val : vol[idx];
     }
     void scale(const float scale)  {
-        for (uint64_t i = 0; i < dimxyzt; i++) {
+        for (uint32_t i = 0; i < stride.w * size.w; i++) {
             vol[i] *= scale;
         }
+    }
+    void transpose() {
+        stride = dim4(size.y * size.z, size.z, 1, size.x * size.y * size.z);
     }
 };
 /// MCX_detect class manages detected photon buffer
@@ -253,7 +254,7 @@ struct MCX_photon { // per thread
     }
     template<const bool isreflect, const bool issavedet>    //< main function to run a single photon from lunch to termination
     void run(MCX_volume<int>& invol, MCX_volume<float>& outvol, MCX_medium props[], const float4 detpos[], MCX_detect& detdata, float detphotonbuffer[], MCX_rand& ran, const MCX_param& gcfg) {
-        lastvoxelidx = invol.index(ipos.x, ipos.y, ipos.z, 0);
+        lastvoxelidx = invol.index(ipos.x, ipos.y, ipos.z);
 
         if (lastvoxelidx < 0 && skip(invol) < 0.f) { //< widefield source, launch position is outside of the domain bounding box
             return; // ray never intersect with the voxel domain bounding box
@@ -349,13 +350,13 @@ struct MCX_photon { // per thread
             pos = float4(pos.x + tmin * vec.x, pos.y + tmin * vec.y, pos.z + tmin * vec.z, 1.f);
             len = float4(NAN, 0.f, 0.f, pos.w);
             ipos = short4((short)pos.x, (short)pos.y, (short)pos.z, -1);
-            lastvoxelidx = invol.index(ipos.x, ipos.y, ipos.z, 0);
+            lastvoxelidx = invol.index(ipos.x, ipos.y, ipos.z);
         }
 
         return tmin;
     }
     void save(MCX_volume<float>& outvol, int tshift, float mua, const MCX_param& gcfg) {
-        outvol.add(gcfg.outputtype == otEnergy ? (len.w - pos.w) : (mua < FLT_EPSILON ? (len.w * len.z) : (len.w - pos.w) / mua), lastvoxelidx + tshift * outvol.dimxyz);
+        outvol.add(gcfg.outputtype == otEnergy ? (len.w - pos.w) : (mua < FLT_EPSILON ? (len.w * len.z) : (len.w - pos.w) / mua), lastvoxelidx + tshift * outvol.stride.w);
         len.w = pos.w;
         len.z = 0.f;
     }
@@ -593,13 +594,15 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
 
                 if (!zmat_decode(cfg["Shapes"]["_ArrayZipData_"].get<std::string>().size(), (unsigned char*)(cfg["Shapes"]["_ArrayZipData_"].get<std::string>().c_str()), &len, (unsigned char**)&buf, 2, &status)) {
                     if (!zmat_decode(len, (unsigned char*)buf, &newlen, (unsigned char**)(&vol), 0, &status)) {
-                        if (newlen == domain.dimxyz) {
+                        if (newlen == domain.stride.w) {
                             for (uint64_t i = 0; i < newlen; i++) {
                                 domain.vol[i] = vol[i];
                             }
-                        } else if (newlen == (domain.dimxyz << 2)) {
+                        } else if (newlen == (domain.stride.w << 2)) {
                             std::memcpy((void*)domain.vol, (void*)vol, newlen);
                         }
+
+                        domain.transpose();  // jdata buffers are row-major
                     }
                 }
 
@@ -662,7 +665,7 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
             cfg["Domain"] = {{"Media", {{{"mua", 0.002}, {"mus", 0.0}, {"g", 1.0}, {"n", 1.37}}, {{"mua", 3.564e-05}, {"mus", 1.0}, {"g", 1.0}, {"n", 1.37}}, {{"mua", 23.05426549}, {"mus", 9.398496241}, {"g", 0.9}, {"n", 1.37}},
                         {{"mua", 0.04584957865}, {"mus", 35.65405549}, {"g", 0.9}, {"n", 1.37}}, {{"mua", 1.657237447}, {"mus", 37.59398496}, {"g", 0.9}, {"n", 1.37}}
                     }
-                }, {"LengthUnit", 0.005},  {"Dim", {200, 200, 200}}
+                }, {"LengthUnit", 0.005}, {"Dim", {200, 200, 200}}
             };
         } else if (bmid == bm_sphshells) {
             cfg["Shapes"] = R"([{"Grid": {"Size": [60, 60, 60], "Tag": 1}}, {"Sphere": {"O": [30, 30, 30], "R": 25, "Tag": 2}}, {"Sphere": {"O": [30, 30, 30], "R": 23, "Tag": 3}}, {"Sphere": {"O": [30, 30, 30], "R": 10, "Tag": 4}}])"_json;
@@ -688,8 +691,8 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
             { "NIFTIHeader", {{"Dim", {outputvol.size.x, outputvol.size.y, outputvol.size.z, outputvol.size.w}}}},
             {
                 "NIFTIData", {{"_ArraySize_", {outputvol.size.x, outputvol.size.y, outputvol.size.z, outputvol.size.w}},
-                    {"_ArrayType_", ((std::string(typeid(T).name()) == "f") ? "single" : "int32")}, {"_ArrayOrder_", "c"},
-                    {"_ArrayData_", std::vector<T>(outputvol.vol, outputvol.vol + outputvol.dimxyzt)}
+                    {"_ArrayType_", ((std::string(typeid(T).name()) == "f") ? "single" : "int32")}, {"_ArrayOrder_", (outputvol.stride.x == 1 ? "c" : "r")},
+                    {"_ArrayData_", std::vector<T>(outputvol.vol, outputvol.vol + outputvol.stride.w * outputvol.size.w)}
                 }
             }
         };
@@ -745,15 +748,15 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
     float* detphotonbuffer = (float*)calloc(sizeof(float), detdata.ppathlen);
 #endif
 #ifdef GPU_OFFLOAD
-    const int totaldetphotondatalen = issavedet ? detdata.maxdetphotons * detdata.detphotondatalen : 1;
+    const int inputvollen = inputvol.stride.w * inputvol.size.w, outputvollen = outputvol.stride.w * outputvol.size.w, totaldetphotondatalen = issavedet ? detdata.maxdetphotons * detdata.detphotondatalen : 1;
     const int deviceid = cfg["Session"].value("DeviceID", 1) - 1, gridsize = cfg["Session"].value("ThreadNum", 100000) / cfg["Session"].value("BlockSize", 64);
 #ifdef _LIBGOMP_OMP_LOCK_DEFINED
     const int blocksize = cfg["Session"].value("BlockSize", 64) / 32;  // gcc nvptx offloading uses {32,teams_thread_limit,1} as blockdim
 #else
     const int blocksize = cfg["Session"].value("BlockSize", 64); // nvc uses {num_teams,1,1} as griddim and {teams_thread_limit,1,1} as blockdim
 #endif
-    _PRAGMA_OMPACC_COPYIN(pos, dir, seeds, gcfg, inputvol) _PRAGMA_OMPACC_COPYIN(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt])
-    _PRAGMA_OMPACC_COPY(outputvol, detdata) _PRAGMA_OMPACC_COPY(outputvol.vol[0:outputvol.dimxyzt], detdata.detphotondata[0:totaldetphotondatalen])
+    _PRAGMA_OMPACC_COPYIN(pos, dir, seeds, gcfg, inputvol) _PRAGMA_OMPACC_COPYIN(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvollen])
+    _PRAGMA_OMPACC_COPY(outputvol, detdata) _PRAGMA_OMPACC_COPY(outputvol.vol[0:outputvollen], detdata.detphotondata[0:totaldetphotondatalen])
     _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, firstprivate(detphotonbuffer[0:ppathlen]), reduction(+ : energyescape) firstprivate(ran, p))
 #else  // GPU_OFFLOAD
     _PRAGMA_OMPACC_HOST_LOOP(reduction(+ : energyescape) firstprivate(ran, p))
