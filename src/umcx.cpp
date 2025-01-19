@@ -592,8 +592,8 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
                 size_t len = 0, newlen = 0;
                 domain.reshape(cfg["Shapes"]["_ArraySize_"][0], cfg["Shapes"]["_ArraySize_"][1], cfg["Shapes"]["_ArraySize_"][2]);
 
-                if (!zmat_decode(cfg["Shapes"]["_ArrayZipData_"].get<std::string>().size(), (unsigned char*)(cfg["Shapes"]["_ArrayZipData_"].get<std::string>().c_str()), &len, (unsigned char**)&buf, 2, &status)) {
-                    if (!zmat_decode(len, (unsigned char*)buf, &newlen, (unsigned char**)(&vol), 0, &status)) {
+                if (!zmat_decode(cfg["Shapes"]["_ArrayZipData_"].get<std::string>().size(), (unsigned char*)(cfg["Shapes"]["_ArrayZipData_"].get<std::string>().c_str()), &len, (unsigned char**)&buf, zmBase64, &status)) {
+                    if (!zmat_decode(len, (unsigned char*)buf, &newlen, (unsigned char**)(&vol), zmZlib, &status)) {
                         if (newlen == domain.stride.w) {
                             for (uint64_t i = 0; i < newlen; i++) {
                                 domain.vol[i] = vol[i];

@@ -42,6 +42,9 @@
 @brief   Compression and decompression interfaces: zmat_run, zmat_encode, zmat_decode
 *******************************************************************************/
 
+#ifndef ZMAT_LIB_HEADER_ONLY
+#define ZMAT_LIB_HEADER_ONLY
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1222,4 +1225,6 @@ int miniz_gzip_uncompress(void* in_data, size_t in_len,
 
     return 0;
 }
+#endif
+
 #endif
