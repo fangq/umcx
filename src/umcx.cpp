@@ -110,7 +110,7 @@ struct MCX_volume { // shared, read-only
         size = dim4(Nx, Ny, Nz, Nt);
         stride = dim4(1, Nx, Nx * Ny, Nx * Ny * Nz);
         delete [] vol;
-        vol = new T[stride.w] {};
+        vol = new T[stride.w * size.w] {};
 
         for (uint32_t i = 0; i < stride.w * size.w; i++) {
             vol[i] = value;
