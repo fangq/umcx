@@ -110,7 +110,7 @@ if [ -z "$temp" ]; then echo "fail to run cone beam source"; fail=$((fail+1)); e
 #if [ -z "$temp" ]; then echo "fail to run 2d simulation"; fail=$((fail+1)); else echo "ok"; fi
 
 echo "test unitinmm ... "
-temp=`"$MCX" --bench skinvessel -S 0 -n 1e5 $PARAM | grep -o -E 'absorbed:.*39\.[0-9]+%'`
+temp=`"$MCX" --bench skinvessel -S 0 -n 1e5 $PARAM | grep -o -E 'absorbed.*39\.[0-9]+%'`
 if [ -z "$temp" ]; then echo "fail to run skinvessel benchmark"; fail=$((fail+1)); else echo "ok"; fi
 
 #echo "test saving photon seeds ... "

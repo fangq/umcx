@@ -716,7 +716,7 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
     std::string runcmd(std::string cmd) {
         std::array<char, 128> buffer;
         std::string result;
-        std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+        std::unique_ptr<FILE, int(*)(FILE*)> pipe(popen(cmd.c_str(), "r"), pclose);
 
         if (!pipe) {
             throw std::runtime_error("unable to run curl to access online data at https://neurojson.io; please install curl first");
