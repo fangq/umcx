@@ -501,7 +501,7 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
                     loadfromfile(argv[i++]);
                 } else if (arg == "-h" || arg == "--help") {
                     printhelp();
-                } else if (arg == "--bench") {
+                } else if (arg == "-Q" || arg == "--bench") {
                     (i < argc) ? benchmark(argv[i++]) : printhelp();
                 } else if ((arg == "-j" || arg == "--json") && i < argc) {
                     cfg.update(json::parse(argv[i++]), true);
@@ -546,7 +546,7 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
     }
     void printhelp() {
         std::cout << "/uMCX/ - Portable, massively-parallel physical volumetric ray-tracer\nCopyright (c) 2024-2025 Qianqian Fang <q.fang@neu.edu>\thttps://mcx.space\n\nFormat:\n\tumcx -flag1 value1 -flag2 value2 ...\n\t\tor\n\tumcx inputjson.json\n\tumcx benchmarkname\n" << std::endl;
-        std::cout << "Flags:\n\t-f/--input\tinput json file\n\t--bench\t\tbenchmark name\n\t-n/--photon\tphoton number [1e6]\n\t-s/--session\toutput name\n\t-u/--unitinmm\tvoxel size in mm [1]\n\t-E/--seed\tRNG seed [1648335518]\n\t-O/--outputtype\t[x]: fluence-rate, f: fluence, e: energy" << std::endl;
+        std::cout << "Flags:\n\t-f/--input\tinput json file\n\t-Q/--bench\t\tbenchmark name\n\t-n/--photon\tphoton number [1e6]\n\t-s/--session\toutput name\n\t-u/--unitinmm\tvoxel size in mm [1]\n\t-E/--seed\tRNG seed [1648335518]\n\t-O/--outputtype\t[x]: fluence-rate, f: fluence, e: energy" << std::endl;
         std::cout << "\t-d/--savedet\tSave detected photons [1]\n\t-S/--save2pt\tSave volumetric output [1]\n\t-w/--savedetflag\t1:detector-id, 4:partial-path, 16:exit-pos, 32:exit-dir, add to combine [5]\n\t-U/--normalize\tnormalize output [1]" << std::endl;
         std::cout << "\t-j/--json\tJSON string to overwrite settings\n\t-t/--thread\tmanual total threads\n\t-T/--blocksize\tmanual thread-block size [64]\n\t-G/--gpuid\tdevice ID [1]\n\t--dumpjson\tdump settings as json\n\t--dumpmask\tdump domain as binary json\n\t-h/--help\tprint help\n\t-N/--net\tbrowse or download simulations from NeuroJSON.io\n\nBuilt-in benchmarks: " << MCX_benchmarks.dump(8) << std::endl;
         std::exit(0);
