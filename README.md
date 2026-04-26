@@ -1,1 +1,773 @@
-# umcx - micro-mcx
+# umcx - Shortest GPU-accelerated 3D Monte Carlo photon simulator
+
+* Copyright (C) 2025-2026  Qianqian Fang <q.fang at neu.edu>
+* License: GNU General Public License version 3 (GPL v3), see License*.txt
+* Version: 0.5
+* Github: https://github.com/fangq/umcx
+* Acknowledgement: This project is part of the [MCX project](https://mcx.space)
+  supported by US National Institute of Health (NIH)
+  grant [R01-GM114365](https://reporter.nih.gov/search/sh5OXnkFp06HiLmhHXRj-Q/project-details/10701664#description)
+
+---
+
+## Table of Contents
+
+1. [Introduction](#introduction)
+2. [Features](#features)
+3. [How to compile umcx](#how-to-compile-umcx)
+4. [How to use umcx](#how-to-use-umcx)
+5. [Command-line flags](#command-line-flags)
+6. [Input file format](#input-file-format)
+7. [Output file format](#output-file-format)
+8. [Source types](#source-types)
+9. [Built-in benchmarks](#built-in-benchmarks)
+10. [How to run built-in tests](#how-to-run-built-in-tests)
+11. [How to build documentation](#how-to-build-documentation)
+12. [Acknowledgement](#acknowledgement)
+
+---
+
+## Introduction
+
+**μMCX (umcx)** is a miniaturized, maximally portable Monte Carlo photon
+transport simulator. It is designed to simulate light propagation in 3D
+voxelated turbid media (such as biological tissues) with GPU acceleration
+using the fewest possible lines of rule-formatted code.
+
+umcx is designed around the following objectives:
+
+- Must be as short as possible after rule-based code formatting
+- Must support MCX's core functionality: 3D voxel-based Monte Carlo photon simulations with JSON inputs/outputs
+- Must support both CPU and GPU hardware across different vendors
+- Must be standard-compliant and compilable with diverse compilers
+- Must be easily readable, easy to modify, and easy to adapt
+
+To meet these objectives, umcx is implemented with:
+
+- **C++11**: Clean, object-oriented, portable standard C++
+- **OpenMP 5 / OpenACC 4.2**: GPU offloading that works across NVIDIA, AMD, and Intel GPUs
+- **JSON I/O**: Human-readable input/output using the [JSON for Modern C++](https://github.com/nlohmann/json) library and the [JData](https://neurojson.org/jdata) binary serialization format
+
+umcx is backward-compatible with the [MCX](https://mcx.space) JSON input format,
+allowing existing MCX simulations to run with minimal modification.
+
+---
+
+## Features
+
+- 3D voxel-based photon Monte Carlo simulation
+- Multi-region heterogeneous optical domains
+- Refractive index mismatch and Fresnel reflection/refraction at boundaries
+- Henyey-Greenstein anisotropic scattering phase function
+- Multiple source types: pencil, isotropic, cone, disk, planar
+- Time-gated simulation with configurable temporal windows
+- Photon detection with partial path length recording (for DRS/DCS)
+- Volumetric fluence-rate, fluence, or energy deposition output
+- JSON and Binary JData (BJDATA/BNII) input/output compatible with MCX
+- Built-in benchmark cases for validation
+- Online simulation database access via [NeuroJSON.io](https://neurojson.io)
+- GPU offloading via OpenMP 5 (`target`) and OpenACC 4.2 (`acc`)
+- Single-source, single-file implementation (~840 lines)
+
+---
+
+## How to compile umcx
+
+umcx is designed to be compatible with any C++ compiler that supports the C++11
+standard and OpenMP/OpenACC GPU offloading. Supported compilers include:
+
+| Compiler | Version | Notes |
+|----------|---------|-------|
+| `g++` (GCC) | ≥ 12 | CPU + NVIDIA/AMD GPU offloading |
+| `nvc++` (NVIDIA HPC SDK) | any | Best NVIDIA GPU support via OpenACC/OpenMP |
+| `clang++` (LLVM) | ≥ 16 | CPU + NVIDIA/AMD GPU offloading |
+| `icpx` (Intel oneAPI) | any | CPU + Intel GPU via OpenMP |
+
+All compilation is done from within the `src/` directory:
+
+```bash
+cd src
+```
+
+### Install compiler dependencies (Ubuntu/Debian)
+
+**GCC 14 with OpenMP (CPU multi-threading only):**
+```bash
+sudo apt-get install g++-14
+```
+
+**GCC 14 with NVIDIA GPU offloading:**
+```bash
+sudo apt-get install g++-14 gcc-14-offload-nvptx
+```
+
+**GCC 14 with AMD GPU offloading:**
+```bash
+sudo apt-get install g++-14 gcc-14-offload-amdgcn
+```
+
+**LLVM/Clang 17 with NVIDIA GPU offloading:**
+```bash
+sudo apt-get install clang-17 libomp-17-dev
+# LLVM OpenMP NVIDIA target libraries also required
+```
+
+**NVIDIA HPC SDK (nvc++):**
+
+Download from [https://developer.nvidia.com/hpc-sdk](https://developer.nvidia.com/hpc-sdk)
+and follow installation instructions. After installation:
+```bash
+export PATH=/opt/nvidia/hpc_sdk/Linux_x86_64/<version>/compilers/bin:$PATH
+```
+
+### Compilation targets
+
+| Make target | Compiler | GPU support | Description |
+|-------------|----------|-------------|-------------|
+| `make` or `make all` | `g++` | None | Multi-core CPU via OpenMP (default) |
+| `make multi` | `g++` | None | Same as `make all` |
+| `make single` | `g++` | None | Single-core CPU (no threading) |
+| `make omp` | `g++` | None | OpenMP CPU build |
+| `make nvc` | `nvc++` | NVIDIA (OpenMP) | NVIDIA GPU via OpenMP target offload |
+| `make nvc ACC=on` | `nvc++` | NVIDIA (OpenACC) | NVIDIA GPU via OpenACC |
+| `make nvidia` | `g++` | NVIDIA | GCC nvptx offloading |
+| `make nvidiaclang` | `clang++` | NVIDIA | Clang nvptx64 offloading |
+| `make amd` | `g++` | AMD | GCC amdgcn offloading |
+| `make amdclang` | `clang++` | AMD (gfx906) | Clang amdgcn offloading |
+| `make debugsingle` | `g++` | None | Single-core debug build |
+| `make debugmulti` | `g++` | None | Multi-core debug build |
+| `make doc` | doxygen | — | Generate HTML/LaTeX documentation |
+| `make clean` | — | — | Remove binary, objects, and doc output |
+| `make pretty` | astyle | — | Auto-format source code |
+
+The compiled binary is placed in `../bin/umcx`.
+
+**Example: compile for CPU multi-core (OpenMP):**
+```bash
+cd src
+make
+```
+
+**Example: compile for NVIDIA GPU with nvc++:**
+```bash
+cd src
+make nvc
+```
+
+**Example: compile for AMD GPU with GCC:**
+```bash
+cd src
+make amd
+```
+
+### Code formatting
+
+Because code length is a core specification of umcx, the canonical line count
+is measured only after auto-formatting with `astyle`. Before each commit or
+line-count measurement, run:
+
+```bash
+make pretty
+```
+
+This requires `astyle` to be installed:
+```bash
+sudo apt-get install astyle
+```
+
+---
+
+## How to use umcx
+
+The compiled binary is `bin/umcx` (or on PATH as `umcx`). It accepts input in
+three equivalent forms:
+
+### 1. Run with a JSON input file
+```bash
+umcx myinput.json
+```
+
+### 2. Run a built-in benchmark
+```bash
+umcx cube60
+umcx -Q skinvessel
+```
+
+### 3. Run with command-line flags
+```bash
+umcx -Q cube60 -n 1e7 -s myresult -U 1
+```
+
+### 4. Override JSON settings with an inline JSON string
+```bash
+umcx myinput.json -j '{"Session":{"Photons":5000000}}'
+umcx -Q cube60 --json '{"Optode":{"Source":{"Type":"isotropic","Pos":[29,29,29]}}}'
+```
+
+### 5. Browse and download from NeuroJSON.io online database
+```bash
+# List all available MCX simulations
+umcx -N
+
+# Download and run a specific simulation from NeuroJSON.io
+umcx -N colin27
+```
+> Requires `curl` to be installed.
+
+### 6. Inspect simulation settings without running
+```bash
+# Print full JSON configuration (useful for debugging or sharing settings)
+umcx -Q cube60 --dumpjson
+
+# Export the volumetric domain mask as a binary JSON file
+umcx -Q cube60 --dumpmask
+```
+
+### Typical workflow
+
+```bash
+# 1. Inspect what a built-in benchmark looks like as JSON
+./bin/umcx --bench cube60 --dumpjson > mycube.json
+
+# 2. Edit mycube.json to customize geometry, media, source
+
+# 3. Run the simulation
+./bin/umcx mycube.json -n 1e7
+
+# 4. Outputs are saved to <SessionID>.bnii and <SessionID>_detp.jdb
+```
+
+---
+
+## Command-line flags
+
+```
+umcx [options] [inputfile.json | benchmarkname]
+```
+
+| Short | Long | Default | Description |
+|-------|------|---------|-------------|
+| `-f`  | `--input` | — | Load configuration from a JSON file |
+| `-Q`  | `--bench` | — | Run a built-in benchmark by name |
+| `-n`  | `--photon` | `1e6` | Number of photons to simulate |
+| `-s`  | `--session` | — | Output session name (prefix for output files) |
+| `-u`  | `--unitinmm` | `1` | Voxel edge length in millimeters |
+| `-E`  | `--seed` | `1648335518` | Random number generator seed |
+| `-O`  | `--outputtype` | `x` | Output type: `x`=fluence-rate, `f`=fluence, `e`=energy |
+| `-b`  | `--reflect` | `0` | Enable refractive-index-mismatch boundary handling (`1`=on) |
+| `-d`  | `--savedet` | `1` | Save detected photon data (`1`=on, `0`=off) |
+| `-w`  | `--savedetflag` | `5` | Detected photon data fields (bit flags, see table below) |
+| `-H`  | `--maxdetphoton` | `1000000` | Maximum number of detected photons to store |
+| `-S`  | `--save2pt` | `1` | Save volumetric output (`1`=on, `0`=off) |
+| `-U`  | `--normalize` | `1` | Normalize output (`1`=on, `0`=off) |
+| `-t`  | `--thread` | auto | Total number of threads (GPU: total work-items) |
+| `-T`  | `--blocksize` | `64` | Thread block/team size (GPU: work-group size) |
+| `-G`  | `--gpuid` | `1` | GPU device ID |
+| `-j`  | `--json` | — | JSON string to merge/overwrite current settings |
+| `-h`  | `--help` | — | Print help message and list benchmarks |
+| `-N`  | `--net` | — | Browse or download simulations from NeuroJSON.io |
+|       | `--dumpjson` | — | Print full JSON configuration and exit (no simulation) |
+|       | `--dumpmask` | — | Save volumetric domain mask to binary JSON and exit |
+
+### `--savedetflag` bit values
+
+The `-w`/`--savedetflag` option is a bitmask controlling which fields are stored
+for each detected photon. Add together the bits for the desired fields:
+
+| Bit value | Field | Description |
+|-----------|-------|-------------|
+| `1` | Detector ID | Index of the detector that captured the photon |
+| `4` | Partial path | Path length (mm) traversed in each medium |
+| `16` | Exit position | [x, y, z] coordinates where photon exits the domain |
+| `32` | Exit direction | [vx, vy, vz] unit vector of photon direction at exit |
+
+Default (`-w 5`) saves detector ID + partial path lengths. To save all fields:
+```bash
+umcx -Q cube60b -w 53   # 1 + 4 + 16 + 32
+```
+
+---
+
+## Input file format
+
+umcx uses JSON as its primary input format, compatible with the
+[MCX JSON input specification](https://mcx.space/wiki/index.cgi?Doc/mcx_help).
+The input file contains five top-level sections:
+
+### Top-level structure
+
+```json
+{
+  "Session":  { ... },
+  "Forward":  { ... },
+  "Domain":   { ... },
+  "Optode":   { ... },
+  "Shapes":   [ ... ]
+}
+```
+
+---
+
+### `Session` — simulation control
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `ID` | string | `""` | Output file name prefix |
+| `Photons` | int | `1000000` | Number of photons to simulate |
+| `RNGSeed` | int | `1648335518` | Random number generator seed |
+| `DoMismatch` | bool | `false` | Enable Fresnel reflection/refraction at boundaries |
+| `DoSaveVolume` | bool | `true` | Save volumetric fluence output |
+| `DoNormalize` | bool | `true` | Normalize volumetric output |
+| `DoPartialPath` | bool | `true` | Save detected photon partial path data |
+| `DoSaveRef` | bool | `false` | Save boundary reflection data |
+| `DoSaveExit` | bool | `false` | Save exit position/direction of detected photons |
+| `DoSaveSeed` | bool | `false` | Save RNG seeds for photon replay |
+| `DoAutoThread` | bool | `true` | Automatically determine thread count |
+| `DoDCS` | bool | `false` | Enable diffuse correlation spectroscopy output |
+| `DoSpecular` | bool | `false` | Include specular reflection at source entry |
+| `DebugFlag` | int | `0` | Debug verbosity level |
+| `OutputFormat` | string | `"jnii"` | Output file format (`"jnii"` = binary JData NIFTI) |
+| `OutputType` | string | `"x"` | Output quantity: `"x"` fluence-rate, `"f"` fluence, `"e"` energy |
+| `MaxDetPhoton` | int | `1000000` | Maximum detected photon buffer size |
+| `SaveDetFlag` | int | `5` | Detected photon data fields (same as `-w`, see above) |
+| `ThreadNum` | int | auto | Total number of GPU work-items |
+| `BlockSize` | int | `64` | GPU work-group (thread block) size |
+| `DeviceID` | int | `1` | GPU device index |
+
+---
+
+### `Forward` — temporal integration
+
+| Key | Type | Unit | Description |
+|-----|------|------|-------------|
+| `T0` | float | seconds | Simulation start time |
+| `T1` | float | seconds | Simulation end time |
+| `Dt` | float | seconds | Time-gate width (bin size) |
+
+Example: a single 5 ns time gate:
+```json
+"Forward": { "T0": 0, "T1": 5e-9, "Dt": 5e-9 }
+```
+
+---
+
+### `Domain` — optical medium and volume
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `Dim` | int[3] | Domain dimensions [Nx, Ny, Nz] in voxels |
+| `LengthUnit` | float | Voxel edge length in millimeters (default `1`) |
+| `OriginType` | int | `0`=corner origin, `1`=grid-aligned origin |
+| `MediaFormat` | string | Voxel data type: `"byte"` (uint8) or `"integer"` (uint32) |
+| `Media` | array | List of medium optical properties (index 0 = background/void) |
+
+Each entry in `Media` is:
+
+| Key | Type | Unit | Description |
+|-----|------|------|-------------|
+| `mua` | float | mm⁻¹ | Absorption coefficient |
+| `mus` | float | mm⁻¹ | Scattering coefficient |
+| `g` | float | — | Henyey-Greenstein anisotropy factor (0–1) |
+| `n` | float | — | Refractive index |
+
+> Index 0 is always the background medium (typically void/air: `mua=0, mus=0, g=1, n=1`).
+> Voxels with value `k` in the domain volume use `Media[k]`.
+
+**Example media definition:**
+```json
+"Domain": {
+  "Dim": [60, 60, 60],
+  "LengthUnit": 1,
+  "Media": [
+    {"mua": 0.00, "mus": 0.0,  "g": 1.00, "n": 1.00},
+    {"mua": 0.02, "mus": 9.0,  "g": 0.89, "n": 1.37},
+    {"mua": 0.04, "mus": 0.01, "g": 0.89, "n": 1.37}
+  ]
+}
+```
+
+---
+
+### `Optode` — light source and detectors
+
+#### Source (`/Optode/Source`)
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `Type` | string | Source type (see [Source types](#source-types)) |
+| `Pos` | float[3] | Source position [x, y, z] in voxels |
+| `Dir` | float[3/4] | Propagation direction unit vector [vx, vy, vz] (optional 4th element w is unused) |
+| `Param1` | float[4] | Source-type-specific parameter 1 (see source type table) |
+| `Param2` | float[4] | Source-type-specific parameter 2 (see source type table) |
+| `SrcNum` | int | Number of simultaneous sources (default `1`) |
+
+#### Detectors (`/Optode/Detector`)
+
+An array of circular detector objects:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `Pos` | float[3] | Detector center position [x, y, z] in voxels |
+| `R` | float | Detector radius in voxels |
+
+**Example:**
+```json
+"Optode": {
+  "Source": {
+    "Type": "pencil",
+    "Pos": [30, 30, 0],
+    "Dir": [0, 0, 1]
+  },
+  "Detector": [
+    {"Pos": [30, 40, 0], "R": 1.5},
+    {"Pos": [30, 50, 0], "R": 1.5}
+  ]
+}
+```
+
+---
+
+### `Shapes` — volumetric domain construction
+
+The `Shapes` array defines geometric primitives that are rasterized (painted) into
+the 3D domain volume in order. Each shape object tags voxels inside it with a
+medium index. Shapes are applied sequentially; later shapes overwrite earlier ones.
+
+Alternatively, `Shapes` can contain a pre-computed volume array in JData format:
+
+```json
+"Shapes": [
+  {"_ArrayType_": "uint8", "_ArraySize_": [Nx, Ny, Nz], "_ArrayData_": [...]}
+]
+```
+
+#### Supported shape primitives
+
+| Shape key | Required fields | Description |
+|-----------|----------------|-------------|
+| `Grid` | `Tag`, `Size[3]` | Fill the entire grid with a medium |
+| `Sphere` | `O[3]`, `R`, `Tag` | Sphere with center `O` and radius `R` |
+| `Box` | `O[3]`, `Size[3]`, `Tag` | Axis-aligned box with corner `O` and size `Size` |
+| `Cylinder` | `C0[3]`, `C1[3]`, `R`, `Tag` | Cylinder between endpoints `C0` and `C1` with radius `R` |
+| `XLayers` | array of `[xmin, xmax, tag]` | Slabs perpendicular to X axis |
+| `YLayers` | array of `[ymin, ymax, tag]` | Slabs perpendicular to Y axis |
+| `ZLayers` | array of `[zmin, zmax, tag]` | Slabs perpendicular to Z axis |
+
+All coordinates are in voxel units.
+
+**Example shapes definition:**
+```json
+"Shapes": [
+  {"Grid":   {"Tag": 1, "Size": [60, 60, 60]}},
+  {"Sphere": {"O": [30, 30, 30], "R": 15, "Tag": 2}}
+]
+```
+
+---
+
+### Complete example input (colin27.json excerpt)
+
+```json
+{
+  "Session": {
+    "ID": "colin27",
+    "Photons": 1000000,
+    "RNGSeed": 1648335518,
+    "DoMismatch": true,
+    "DoSaveVolume": true,
+    "DoNormalize": true,
+    "DoPartialPath": true,
+    "OutputFormat": "jnii",
+    "OutputType": "x"
+  },
+  "Forward": {"T0": 0, "T1": 5e-9, "Dt": 5e-9},
+  "Domain": {
+    "MediaFormat": "byte",
+    "LengthUnit": 1,
+    "Dim": [181, 217, 181],
+    "Media": [
+      {"mua": 0,     "mus": 0,      "g": 1,    "n": 1    },
+      {"mua": 0.019, "mus": 7.8182, "g": 0.89, "n": 1.37 },
+      {"mua": 0.019, "mus": 7.8182, "g": 0.89, "n": 1.37 },
+      {"mua": 0.0004,"mus": 0.009,  "g": 0.89, "n": 1.37 },
+      {"mua": 0.02,  "mus": 9,      "g": 0.89, "n": 1.37 },
+      {"mua": 0.08,  "mus": 40.9,   "g": 0.89, "n": 1.37 }
+    ]
+  },
+  "Optode": {
+    "Source": {
+      "Type": "pencil",
+      "Pos": [75, 67.38, 167.5],
+      "Dir": [0.1636, 0.4569, -0.8743, 0]
+    },
+    "Detector": [
+      {"Pos": [75, 77.19, 170.3], "R": 1},
+      {"Pos": [75, 89.0,  170.3], "R": 1}
+    ]
+  }
+}
+```
+
+---
+
+## Output file format
+
+umcx produces two output files per simulation in
+[Binary JData (BJDATA)](https://neurojson.org/bjdata) format, which is a
+binary encoding of JSON and is fully readable/writable with the
+[JData toolbox](https://neurojson.org) in MATLAB, Python, and other languages.
+
+### Volumetric output (`<SessionID>.bnii`)
+
+Saved when `Session/DoSaveVolume` is `true` (default). The file is a NIFTI-formatted
+Binary JData file containing the 3D or 4D volumetric result.
+
+```
+File: <SessionID>.bnii
+```
+
+Top-level structure:
+```json
+{
+  "NIFTIHeader": {
+    "Dim": [Nx, Ny, Nz, Nt]
+  },
+  "NIFTIData": {
+    "_ArrayType_": "single",
+    "_ArraySize_": [Nx, Ny, Nz, Nt],
+    "_ArrayOrder_": "c",
+    "_ArrayData_": [...]
+  }
+}
+```
+
+The meaning of voxel values depends on `Session/OutputType`:
+
+| `OutputType` | Description | Normalization factor |
+|-------------|-------------|---------------------|
+| `"x"` | Fluence rate (mm⁻² s⁻¹) | `Dt / (nphoton × unitinmm²)` |
+| `"f"` | Fluence (mm⁻²) | `1 / (nphoton × unitinmm²)` |
+| `"e"` | Energy deposition (a.u.) | `1 / nphoton` |
+
+The 4th dimension `Nt = (T1 - T0) / Dt` is the number of time gates.
+With a single time gate (`T0=0`, `T1=Dt`), `Nt=1` and the output is 3D.
+
+---
+
+### Detected photon output (`<SessionID>_detp.jdb`)
+
+Saved when `Session/DoPartialPath` is `true` (default). Contains one record
+per detected photon.
+
+```
+File: <SessionID>_detp.jdb
+```
+
+Top-level structure:
+```json
+{
+  "MCXData": {
+    "Info": {
+      "Version": 1,
+      "MediaNum": <number of media>,
+      "DetNum": <number of detectors>,
+      "ColumnNum": <floats per photon record>,
+      "TotalPhoton": <photons launched>,
+      "DetectedPhoton": <photons that reached a detector>,
+      "SavedPhoton": <photons saved to file>,
+      "LengthUnit": <voxel size in mm>
+    },
+    "PhotonRawData": {
+      "_ArrayType_": "single",
+      "_ArraySize_": [SavedPhoton, ColumnNum],
+      "_ArrayData_": [...]
+    }
+  }
+}
+```
+
+Each row of `PhotonRawData` contains the following fields (in order),
+depending on the `SaveDetFlag` bitmask:
+
+| Bit | Field | Columns | Description |
+|-----|-------|---------|-------------|
+| `1` | Detector ID | 1 | 1-based index of the detector that captured the photon |
+| `4` | Partial path | `MediaNum` | Path length (mm) in each medium (index matches `Domain/Media`) |
+| `16` | Exit position | 3 | [x, y, z] coordinates (voxels) at domain boundary exit |
+| `32` | Exit direction | 3 | [vx, vy, vz] unit vector at domain boundary exit |
+
+Default `SaveDetFlag=5` (bits 1+4) yields `1 + MediaNum` columns per photon.
+
+**Reading detected photon data in MATLAB** (using the
+[JData toolbox](https://github.com/NeuroJSON/jsnirfy)):
+```matlab
+data = loadjson('mysim_detp.jdb');
+ppath = data.MCXData.PhotonRawData(:, 2:end);  % partial paths, shape [ndet x nmedia]
+detid = data.MCXData.PhotonRawData(:, 1);      % detector IDs
+```
+
+---
+
+## Source types
+
+The source type is set via `Optode/Source/Type`. The following types are supported:
+
+| Type | Description | `Param1` | `Param2` |
+|------|-------------|----------|----------|
+| `pencil` | Collimated point beam; all photons launch in direction `Dir` | — | — |
+| `isotropic` | Point source; photons emitted uniformly in all directions | — | — |
+| `cone` | Cone beam; photons uniformly distributed within a cone around `Dir` | `[half_angle, 0, 0, 0]` (radians) | — |
+| `disk` | Disk (top-hat) source; photons uniformly distributed over a disk centered at `Pos` in the plane perpendicular to `Dir` | `[outer_radius, inner_radius, 0, 0]` (mm) | — |
+| `planar` | Planar (rectangular) source; photons uniformly distributed over a parallelogram | `[edge1_x, edge1_y, edge1_z, 0]` | `[edge2_x, edge2_y, edge2_z, 0]` |
+
+**Example: disk source with 5 mm radius:**
+```json
+"Source": {
+  "Type": "disk",
+  "Pos": [30, 30, 0],
+  "Dir": [0, 0, 1],
+  "Param1": [5, 0, 0, 0]
+}
+```
+
+**Example: planar widefield source (10×10 mm patch):**
+```json
+"Source": {
+  "Type": "planar",
+  "Pos": [20, 20, 0],
+  "Dir": [0, 0, 1],
+  "Param1": [10, 0, 0, 0],
+  "Param2": [0, 10, 0, 0]
+}
+```
+
+---
+
+## Built-in benchmarks
+
+umcx includes seven built-in benchmark cases. They can be run with:
+
+```bash
+umcx <benchmarkname>
+umcx -Q <benchmarkname>
+umcx -Q <benchmarkname> -n 1e7    # override photon count
+```
+
+| Name | Domain size | Source | Media | Notes |
+|------|------------|--------|-------|-------|
+| `cube60` | 60³ voxels | Pencil at (29,29,0) | 3 (homogeneous) | No reflection |
+| `cube60b` | 60³ voxels | Pencil at (29,29,0) | 3 (homogeneous) | With boundary reflection |
+| `cube60planar` | 60³ voxels | Planar 40×40 mm | 3 (homogeneous) | Widefield illumination |
+| `cubesph60b` | 60³ voxels | Pencil | 3 | Sphere (r=15) embedded in cube |
+| `sphshells` | 60³ voxels | Pencil | 4 | Three concentric spherical shells |
+| `spherebox` | 60³ voxels | Pencil | 3 | Sphere (r=10) with short time gate |
+| `skinvessel` | 200³ voxels | Disk | 5 | Realistic skin + cylindrical vessel (r=10); `LengthUnit=0.005` mm |
+
+All benchmarks use `T0=0`, `T1=5e-9 s`, `Dt=5e-9 s` by default (single 5 ns gate).
+
+**Expected console output** (example for `cube60`):
+```
+simulated energy 1000000, speed 3245 photon/ms, duration 308 ms,
+normalizer 5e-09, detected 412, absorbed 17.3%
+```
+
+To print the full JSON configuration of a benchmark without running:
+```bash
+umcx --bench cube60 --dumpjson
+```
+
+---
+
+## How to run built-in tests
+
+A shell-based test suite is located in `test/testumcx.sh`. It runs a series of
+functional tests verifying benchmark outputs, flag behavior, and boundary conditions.
+
+```bash
+cd test
+bash testumcx.sh
+```
+
+The script automatically finds the `umcx` binary in `../bin/umcx` or on `$PATH`.
+On success:
+```
+passed all tests!
+```
+
+On failure, the script prints the failing test name and exits with a non-zero code.
+
+The test suite covers:
+- Binary existence and executable permissions
+- Shared library linkage
+- Help text output
+- Built-in benchmark listing
+- JSON export (`--dumpjson`)
+- JSON override (`--json`)
+- Homogeneous domain simulation (cube60)
+- Boundary reflection (cube60b, `-b 1`)
+- Photon detection (cube60b)
+- Planar widefield source (cube60planar)
+- Isotropic and cone beam sources
+- Heterogeneous domain (spherebox)
+- Skin vessel with `unitinmm` scaling (skinvessel)
+- Memory safety (valgrind, if installed)
+
+---
+
+## How to build documentation
+
+umcx uses [Doxygen](https://www.doxygen.nl) for API documentation. The Doxygen
+configuration is in `src/umcxdoc.cfg`.
+
+Install Doxygen (Ubuntu/Debian):
+```bash
+sudo apt-get install doxygen
+```
+
+Build documentation:
+```bash
+cd src
+make doc
+```
+
+The generated HTML documentation is placed in `doc/`. Open `doc/index.html` in
+a browser to browse the API documentation.
+
+---
+
+## License
+
+umcx is released under the **GNU General Public License version 3 (GPL v3)**.
+See `LICENSE.txt` for the full license text.
+
+---
+
+## Citation
+
+If you use umcx in a publication, please cite the MCX project:
+
+> Fang Q, Boas DA. Monte Carlo simulation of photon migration in 3D turbid media
+> accelerated by graphics processing units. *Opt Express.* 2009;17(22):20178-90.
+> doi:10.1364/OE.17.020178
+
+---
+
+## Acknowledgement
+
+The authors would like to thank Mat Colgrove at NVIDIA for suggestions on
+OpenMP offloading and code optimization.
+
+This project is supported by the US National Institutes of Health (NIH)
+under grant [R01-GM114365](https://reporter.nih.gov/search/sh5OXnkFp06HiLmhHXRj-Q/project-details/10701664#description).
+
+---
+
+### Embedded third-party components
+
+umcx bundles the following open-source libraries directly in the source tree
+(no separate installation required):
+
+| Component | Version | Location | License | Description |
+|-----------|---------|----------|---------|-------------|
+| [JSON for Modern C++](https://github.com/nlohmann/json) | 3.11.3 | `src/nlohmann/json.hpp` | MIT | Single-header C++11 JSON parser and serializer by Niels Lohmann |
+| [miniz](https://github.com/richgel999/miniz) | — | `src/lib/` | MIT | Single-file zlib/deflate compression library used for binary JData output |
