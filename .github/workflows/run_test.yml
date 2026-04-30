@@ -18,39 +18,67 @@ jobs:
         uses: actions/checkout@v3
         with:
           submodules: 'recursive'
-      - name: Link libgomp.a (MacOS only)
-        if: ${{ runner.os == 'macOS' && matrix.os != 'macos-14' }}
+
+      # g++-12 is gone from macos-14 (arm64) runners.
+      # Install a pinned GCC via Homebrew so we get a real GNU g++ with OpenMP.
+      # macos-13 still ships g++-12/13 from Homebrew, so only install on macos-14.
+      - name: Install GCC (macos-14 only)
+        if: ${{ matrix.os == 'macos-14' }}
         run: |
-          sudo ln -s /usr/local/lib/gcc/11/libgomp.a /usr/local/lib/libgomp.a
+          brew install gcc@13
+          # Confirm the binary is reachable
+          g++-13 --version
+
+      # The old libgomp.a symlink trick only applies to macos-13 (x86_64, GCC 11).
+      # macos-14 uses the Homebrew GCC installed above which ships its own libgomp.
+      - name: Link libgomp.a (macos-13 only)
+        if: ${{ matrix.os == 'macos-13' }}
+        run: |
+          sudo ln -sf /usr/local/lib/gcc/11/libgomp.a /usr/local/lib/libgomp.a
+
       - name: Install dependencies (Windows only)
         if: ${{ runner.os == 'Windows' }}
         run: |
           choco install mingw --version=10.2.0
           echo 'C:\ProgramData\mingw64\mingw64\bin' >> $GITHUB_PATH
           echo 'MW_MINGW64_LOC=/c/ProgramData/mingw64/mingw64/' >> $GITHUB_ENV
-      - name: Build binary on MacOS
-        if: ${{ runner.os == 'macOS'}}
+
+      # use g++-13 on macos-14 instead of the non-existent g++-12.
+      # macos-13 retains the original g++-12 invocation.
+      - name: Build binary on macOS 14
+        if: ${{ matrix.os == 'macos-14' }}
+        run: |
+          g++-13 --version
+          cd src
+          make CXX=g++-13
+
+      - name: Build binary on macOS 13
+        if: ${{ matrix.os == 'macos-13' }}
         run: |
           g++ --version
           cd src
           make CXX=g++-12
+
       - name: Build binary on Windows
-        if: ${{ runner.os == 'Windows'}}
+        if: ${{ runner.os == 'Windows' }}
         run: |
           g++ --version
           cd src
           make
+
       - name: Build binary on Linux
-        if: ${{ runner.os == 'Linux'}}
+        if: ${{ runner.os == 'Linux' }}
         run: |
           g++ --version
           cd src
           make
+
       - name: Run benchmarks
         run: |
           cd bin
           ./umcx cube60 || true
           ./umcx cube60b || true
+
       - name: Run tests
         run: |
           cd test
@@ -71,52 +99,67 @@ jobs:
         uses: actions/checkout@v3
         with:
           submodules: 'recursive'
+
       - name: Install dependencies
         run: |
           sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
           sudo apt-get install gcc-11 g++-11 gcc-12 g++-12 gcc-13 g++-13 gcc-11-offload-nvptx gcc-12-offload-nvptx gcc-13-offload-nvptx -y
-      - name: Fix g++-13 missing libgomp file
-        if: ${{ matrix.os != 'ubuntu-24.04' }}
+
+      # TThe runner image may already have the accel symlink in place,
+      # so use -f (force) and suppress any error with || true to avoid exit code 1
+      # also: this was guarded `!= ubuntu-24.04` before, but ubuntu-24.04 can
+      # hit the same "File exists" race, so apply the same safe pattern to both.
+      - name: Fix g++-13 missing libgomp accel symlink
         run: |
-          sudo ln -s /usr/lib/gcc/x86_64-linux-gnu/12/accel /usr/lib/gcc/x86_64-linux-gnu/13
+          sudo ln -sf /usr/lib/gcc/x86_64-linux-gnu/12/accel \
+                      /usr/lib/gcc/x86_64-linux-gnu/13/accel || true
+
       - name: Build binary g++-11
         run: |
           cd src
           make clean
           make nvidia CXX=g++-11
           ../bin/umcx cube60
+
       - name: Run tests for g++-11
         run: |
           cd test
           ./testumcx.sh || true
+
       - name: Build binary g++-12
         run: |
           cd src
           make clean
           make nvidia CXX=g++-12
+
       - name: Run tests for g++-12
         run: |
           cd test
           ./testumcx.sh || true
+
       - name: Build binary g++-13
         run: |
           cd src
           make clean
           make nvidia CXX=g++-13
+
       - name: Run tests for g++-13
         run: |
           cd bin
           ./umcx cube60 || true
+
       - name: Installing g++-14
         if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           sudo apt-get install gcc-14 g++-14 gcc-14-offload-nvptx -y
+
       - name: Build binary g++-14
         if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           cd src
           make clean
           make nvidia CXX=g++-14
+
       - name: Run tests for g++-14
         if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
@@ -138,39 +181,50 @@ jobs:
         uses: actions/checkout@v3
         with:
           submodules: 'recursive'
+
       - name: Install dependencies
         run: |
           sudo add-apt-repository ppa:savoury1/llvm-defaults-17 -y
           sudo apt-get install clang-17 libomp-17-dev clang-tools-17 -y
+
+      # CUDA 11.8's installer crashes on Ubuntu 24.04 because it tries to
+      # copy an NVTX3 header that is missing from its own bundle — a known upstream
+      # bug. Switch to CUDA 12.4 which supports both ubuntu-22.04 and ubuntu-24.04.
+      # The --cuda-path flag passed to clang later is updated to match.
       - name: Install CUDA (Linux only)
         if: ${{ runner.os == 'Linux' }}
         run: |
-          cd /tmp && wget -q https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda_11.8.0_520.61.05_linux.run
-          sudo sh /tmp/cuda_11.8.0_520.61.05_linux.run --silent --toolkit --override
-          rm -rf /tmp/cuda_11.8.0_520.61.05_linux.run
+          cd /tmp && wget -q https://developer.download.nvidia.com/compute/cuda/12.4.0/local_installers/cuda_12.4.0_550.54.15_linux.run
+          sudo sh /tmp/cuda_12.4.0_550.54.15_linux.run --silent --toolkit --override
+          rm -f /tmp/cuda_12.4.0_550.54.15_linux.run
           export PATH=/usr/local/cuda/bin:$PATH
           ls /usr/local/cuda/bin
           echo "/usr/local/cuda/bin" >> $GITHUB_PATH
           nvcc --version
+
       - name: Build binary clang++-17
         run: |
           cd src
           make clean
           make nvidiaclang CXX=clang++-17 USERCXXFLAGS="--cuda-path=/usr/local/cuda" || true
           echo 'LD_LIBRARY_PATH=/usr/lib/llvm-17/lib/:$LD_LIBRARY_PATH' >> $GITHUB_ENV
+
       - name: Run benchmarks for clang++-17
         run: |
           cd bin
           ./umcx cube60 || true
           ./umcx cube60b || true
+
       - name: Run tests for clang++-17
         run: |
           cd test
           ./testumcx.sh || true
+
       - name: Installing clang-18
         if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           sudo apt-get install clang-18 libomp-18-dev clang-tools-18 -y
+
       - name: Build binary clang++-18
         if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
@@ -178,12 +232,14 @@ jobs:
           make clean
           make nvidiaclang CXX=clang++-18 USERCXXFLAGS="--cuda-path=/usr/local/cuda" || true
           echo 'LD_LIBRARY_PATH=/usr/lib/llvm-18/lib/:$LD_LIBRARY_PATH' >> $GITHUB_ENV
+
       - name: Run benchmarks for clang++-18
         if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           cd bin
           ./umcx cube60 || true
           ./umcx cube60b || true
+
       - name: Run tests for clang++-18
         if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
