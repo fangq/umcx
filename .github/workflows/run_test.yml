@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies (Windows only)
         if: ${{ runner.os == 'Windows' }}
         run: |
-          choco install mingw -y
+          choco install mingw drmemory -y
           echo 'C:\ProgramData\mingw64\mingw64\bin' >> $GITHUB_PATH
 
       - name: Build binary on macOS 15 Intel
@@ -64,6 +64,11 @@ jobs:
           cd bin
           ./umcx cube60 || true
           ./umcx cube60b || true
+
+      - name: Debug crash with Dr. Memory (Windows only)
+        if: ${{ runner.os == 'Windows' }}
+        run: |
+          "C:/Program Files/Dr. Memory/bin64/drmemory.exe" -light -- bin/umcx cube60 || true
 
       - name: Run tests
         run: |
