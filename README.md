@@ -108,38 +108,38 @@ function in umcx. Line counts for umcx are measured after auto-formatting with
 
 ### Feature comparison
 
-Legend: **x** = fully supported, **p** = partially supported (fraction indicates
+Legend: **✔** = fully supported, **p** = partially supported (fraction indicates
 covered / total variants), **t** = trivially implementable but omitted to
 minimize code length, **—** = not implemented
 
 | Feature | MCX | umcx |
 |---------|:---:|:----:|
-| Simulate any 3D label-based voxelated domain | x | x |
-| Time-resolved simulation | x | x |
-| Saving detected photon data (`-d`) | x | x |
-| Boundary reflection (`-b`) | x | x |
-| JSON input data file (`-f`/`-j`) | x | x |
-| Shape-based media descriptor | x | x |
-| NVIDIA GPU (`-G`) | x | x |
-| Multi-GPU simulation | x | — |
-| CPU/GPU cross-vendor support | x (mcxcl) | x |
-| Complex sources, focal length | x | p (5/15) |
-| Built-in benchmarks (`--bench`) | x | p (8/10) |
-| Customize detected-photon output (`-w`) | x | p (4/8) |
-| Widefield launch | x | x |
-| JSON/Binary JSON data output | x | x |
-| JSON data compression (`-z`) | x | t |
-| Patterned source | x | — |
-| Photon sharing | x | — |
-| Photon replay (`-q` / RF replay) | x | — |
-| Multi-source simulation | x | — |
-| Continuous medium formats (`-k`) | x | — |
-| Split-voxel MC (SVMC) | x | — |
-| Polarized light simulations | x | — |
-| User-defined launch distribution | x | t |
-| User-defined scattering phase function | x | t |
-| Boundary conditions (`-B`) | x | — |
-| MATLAB/Python language bindings | x | t |
+| Simulate any 3D label-based voxelated domain | ✔ | ✔ |
+| Time-resolved simulation | ✔ | ✔ |
+| Saving detected photon data (`-d`) | ✔ | ✔ |
+| Boundary reflection (`-b`) | ✔ | ✔ |
+| JSON input data file (`-f`/`-j`) | ✔ | ✔ |
+| Shape-based media descriptor | ✔ | ✔ |
+| NVIDIA GPU (`-G`) | ✔ | ✔ |
+| Multi-GPU simulation | ✔ | — |
+| CPU/GPU cross-vendor support | ✔ (mcxcl) | ✔ |
+| Complex sources, focal length | ✔ | p (5/15) |
+| Built-in benchmarks (`--bench`) | ✔ | p (8/10) |
+| Customize detected-photon output (`-w`) | ✔ | p (4/8) |
+| Widefield launch | ✔ | ✔ |
+| JSON/Binary JSON data output | ✔ | ✔ |
+| JSON data compression (`-z`) | ✔ | t |
+| Patterned source | ✔ | — |
+| Photon sharing | ✔ | — |
+| Photon replay (`-q` / RF replay) | ✔ | — |
+| Multi-source simulation | ✔ | — |
+| Continuous medium formats (`-k`) | ✔ | — |
+| Split-voxel MC (SVMC) | ✔ | — |
+| Polarized light simulations | ✔ | — |
+| User-defined launch distribution | ✔ | t |
+| User-defined scattering phase function | ✔ | t |
+| Boundary conditions (`-B`) | ✔ | — |
+| MATLAB/Python language bindings | ✔ | t |
 
 ---
 

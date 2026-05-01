@@ -36,7 +36,11 @@
     #define _PRAGMA_OMPACC_COPYIN(...)    _PRAGMA(omp target data map(to: __VA_ARGS__))
     #define _PRAGMA_OMPACC_COPY(...)      _PRAGMA(omp target data map(tofrom: __VA_ARGS__))
     #define _PRAGMA_OMPACC_HOST_LOOP(settings)   _PRAGMA(omp parallel for settings)
-    #define _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, ompignore, settings)   _PRAGMA(omp target teams distribute parallel for num_teams(gridsize) thread_limit(blocksize) device(deviceid) settings)
+    #if defined(__GNUC__) && !defined(__clang__) && !defined(__NVCOMPILER) && !defined(__INTEL_COMPILER)
+        #define _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, ompignore, settings)   _PRAGMA(omp target teams distribute parallel for simd simdlen(32) num_teams(gridsize) thread_limit(blocksize) device(deviceid) settings)
+    #else
+        #define _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, ompignore, settings)   _PRAGMA(omp target teams distribute parallel for num_teams(gridsize) thread_limit(blocksize) device(deviceid) settings)
+    #endif
 #else
     #define _PRAGMA_OMPACC_(settings)     _PRAGMA(acc settings)
     #define _PRAGMA_OMPACC_COPYIN(...)    _PRAGMA(acc data copyin(__VA_ARGS__))
@@ -727,10 +731,10 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
 #ifdef GPU_OFFLOAD
     const int totaldetphotondatalen = issavedet ? detdata.maxdetphotons * detdata.detphotondatalen : 1;
     const int deviceid = cfg["Session"].value("DeviceID", 1) - 1, gridsize = cfg["Session"].value("ThreadNum", 100000) / cfg["Session"].value("BlockSize", 64);
-#ifdef _LIBGOMP_OMP_LOCK_DEFINED
-    const int blocksize = cfg["Session"].value("BlockSize", 64) / 32;  // gcc nvptx offloading uses {32,teams_thread_limit,1} as blockdim
+#if defined(__GNUC__) && !defined(__clang__) && !defined(__NVCOMPILER) && !defined(__INTEL_COMPILER)
+    const int blocksize = cfg["Session"].value("BlockSize", 64) / 32;  // gcc nvptx: blockdim={32,thread_limit,1}, simd fills the x=32 dimension
 #else
-    const int blocksize = cfg["Session"].value("BlockSize", 64); // nvc uses {num_teams,1,1} as griddim and {teams_thread_limit,1,1} as blockdim
+    const int blocksize = cfg["Session"].value("BlockSize", 64); // nvc++: blockdim={thread_limit,1,1}
 #endif
     _PRAGMA_OMPACC_COPYIN(pos, dir, seeds, gcfg, inputvol) _PRAGMA_OMPACC_COPYIN(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt])
     _PRAGMA_OMPACC_COPY(outputvol, detdata) _PRAGMA_OMPACC_COPY(outputvol.vol[0:outputvol.dimxyzt], detdata.detphotondata[0:totaldetphotondatalen])
