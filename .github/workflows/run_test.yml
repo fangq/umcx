@@ -7,7 +7,7 @@ jobs:
     name: CPU test
     strategy:
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, macos-15-intel, macos-14, windows-2019]
+        os: [ubuntu-22.04, ubuntu-24.04, macos-15-intel, macos-14, windows-2022]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -87,17 +87,24 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Install dependencies
+      - name: Install dependencies (ubuntu-22.04)
+        if: ${{ matrix.os == 'ubuntu-22.04' }}
         run: |
-          sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
-          sudo apt-get install gcc-11 g++-11 gcc-12 g++-12 gcc-13 g++-13 gcc-11-offload-nvptx gcc-12-offload-nvptx gcc-13-offload-nvptx -y
+          sudo apt-get install gcc-11 g++-11 gcc-12 g++-12 gcc-11-offload-nvptx gcc-12-offload-nvptx -y
+
+      - name: Install dependencies (ubuntu-24.04)
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
+        run: |
+          sudo apt-get install gcc-12 g++-12 gcc-13 g++-13 gcc-12-offload-nvptx gcc-13-offload-nvptx -y
 
       - name: Fix g++-13 missing libgomp accel symlink
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           sudo ln -sf /usr/lib/gcc/x86_64-linux-gnu/12/accel \
                       /usr/lib/gcc/x86_64-linux-gnu/13/accel || true
 
       - name: Build binary g++-11
+        if: ${{ matrix.os == 'ubuntu-22.04' }}
         run: |
           cd src
           make clean
@@ -105,6 +112,7 @@ jobs:
           ../bin/umcx cube60
 
       - name: Run tests for g++-11
+        if: ${{ matrix.os == 'ubuntu-22.04' }}
         run: |
           cd test
           ./testumcx.sh || true
@@ -121,12 +129,14 @@ jobs:
           ./testumcx.sh || true
 
       - name: Build binary g++-13
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           cd src
           make clean
           make nvidia CXX=g++-13
 
       - name: Run tests for g++-13
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           cd bin
           ./umcx cube60 || true
@@ -165,9 +175,18 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Install dependencies
+      - name: Install dependencies (ubuntu-22.04)
+        if: ${{ matrix.os == 'ubuntu-22.04' }}
         run: |
-          sudo add-apt-repository ppa:savoury1/llvm-defaults-17 -y
+          wget -qO /tmp/llvm.asc https://apt.llvm.org/llvm-snapshot.gpg.key
+          sudo cp /tmp/llvm.asc /etc/apt/trusted.gpg.d/llvm.asc
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-17 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update -q
+          sudo apt-get install clang-17 libomp-17-dev clang-tools-17 -y
+
+      - name: Install dependencies (ubuntu-24.04)
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
+        run: |
           sudo apt-get install clang-17 libomp-17-dev clang-tools-17 -y
 
       - name: Install CUDA toolkit (apt network repo)

@@ -14,16 +14,17 @@
 
 1. [Introduction](#introduction)
 2. [Features](#features)
-3. [How to compile umcx](#how-to-compile-umcx)
-4. [How to use umcx](#how-to-use-umcx)
-5. [Command-line flags](#command-line-flags)
-6. [Input file format](#input-file-format)
-7. [Output file format](#output-file-format)
-8. [Source types](#source-types)
-9. [Built-in benchmarks](#built-in-benchmarks)
-10. [How to run built-in tests](#how-to-run-built-in-tests)
-11. [How to build documentation](#how-to-build-documentation)
-12. [Acknowledgement](#acknowledgement)
+3. [Comparison with MCX](#comparison-with-mcx)
+4. [How to compile umcx](#how-to-compile-umcx)
+5. [How to use umcx](#how-to-use-umcx)
+6. [Command-line flags](#command-line-flags)
+7. [Input file format](#input-file-format)
+8. [Output file format](#output-file-format)
+9. [Source types](#source-types)
+10. [Built-in benchmarks](#built-in-benchmarks)
+11. [How to run built-in tests](#how-to-run-built-in-tests)
+12. [How to build documentation](#how-to-build-documentation)
+13. [Acknowledgement](#acknowledgement)
 
 ---
 
@@ -68,6 +69,77 @@ allowing existing MCX simulations to run with minimal modification.
 - Online simulation database access via [NeuroJSON.io](https://neurojson.io)
 - GPU offloading via OpenMP 5 (`target`) and OpenACC 4.2 (`acc`)
 - Single-source, single-file implementation (~840 lines)
+
+---
+
+## Comparison with MCX
+
+umcx is a compact re-implementation of [MCX](https://mcx.space) that captures
+its core Monte Carlo simulation functionality in roughly **24× fewer lines of
+code**. The following tables compare MCX and umcx in terms of code size and
+feature coverage.
+
+### Code length
+
+The table below maps each MCX source module to the corresponding class or
+function in umcx. Line counts for umcx are measured after auto-formatting with
+`astyle` (`make pretty`).
+
+| MCX Lines | MCX File | uMCX Class / Function | uMCX Lines | Reduction |
+|----------:|----------|----------------------|----------:|:---------:|
+| 90 | `mcx.c` | `main()` | 8 | 11× |
+| 940 | `mcx_shapes.c/.h` | `MCX_userio::initdomain()` | 43 | 21× |
+| 313 | `mcx_tictoc.c/.h` | `MCX_clock` | 8 | 32× |
+| 6036 | `mcx_utils.c/.h` | `MCX_userio` | 247 | 24× |
+| 4875 | `mcx_core.cu/.h` | `MCX_run_simulation()` / `MCX_kernel()` / `MCX_photon` / `MCX_detect` | 53 / 56 / 236 / 37 | 13× |
+| 140 | `mcx_rand_xorshift128p.cu` | `MCX_rand` | 29 | 5× |
+| 156 | `mcx_const.h` | *(consolidated)* | — | — |
+| 85 | `mcx_ieee754.h` | *(consolidated)* | — | — |
+| 428 | `mcx_mie.cpp/.h` | *(not included)* | — | — |
+| 7125 | `mcx_bench.c/.h` | `MCX_userio::benchmark()` | 36 | — |
+| **20,188** | **total (core)** | **Total** | **843** | **24×** |
+| 1374 | `mcxlab.cpp` | MATLAB/Octave binding | — | — |
+| 1440 | `pmcx.cpp` | Python binding | — | — |
+| **23,412** | **total (incl. bindings)** | — | — | — |
+
+> The 843 umcx lines include 29 full-line comments and 69 blank lines.
+> MCX's Mie scattering module (`mcx_mie.cpp/.h`) and language bindings
+> (`mcxlab.cpp`, `pmcx.cpp`) have no equivalents in umcx.
+
+### Feature comparison
+
+Legend: **x** = fully supported, **p** = partially supported (fraction indicates
+covered / total variants), **t** = trivially implementable but omitted to
+minimize code length, **—** = not implemented
+
+| Feature | MCX | umcx |
+|---------|:---:|:----:|
+| Simulate any 3D label-based voxelated domain | x | x |
+| Time-resolved simulation | x | x |
+| Saving detected photon data (`-d`) | x | x |
+| Boundary reflection (`-b`) | x | x |
+| JSON input data file (`-f`/`-j`) | x | x |
+| Shape-based media descriptor | x | x |
+| NVIDIA GPU (`-G`) | x | x |
+| Multi-GPU simulation | x | — |
+| CPU/GPU cross-vendor support | x (mcxcl) | x |
+| Complex sources, focal length | x | p (5/15) |
+| Built-in benchmarks (`--bench`) | x | p (8/10) |
+| Customize detected-photon output (`-w`) | x | p (4/8) |
+| Widefield launch | x | x |
+| JSON/Binary JSON data output | x | x |
+| JSON data compression (`-z`) | x | t |
+| Patterned source | x | — |
+| Photon sharing | x | — |
+| Photon replay (`-q` / RF replay) | x | — |
+| Multi-source simulation | x | — |
+| Continuous medium formats (`-k`) | x | — |
+| Split-voxel MC (SVMC) | x | — |
+| Polarized light simulations | x | — |
+| User-defined launch distribution | x | t |
+| User-defined scattering phase function | x | t |
+| Boundary conditions (`-B`) | x | — |
+| MATLAB/Python language bindings | x | t |
 
 ---
 
