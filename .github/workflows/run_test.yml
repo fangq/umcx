@@ -28,9 +28,8 @@ jobs:
       - name: Install dependencies (Windows only)
         if: ${{ runner.os == 'Windows' }}
         run: |
-          choco install mingw --version=10.2.0
+          choco install mingw -y
           echo 'C:\ProgramData\mingw64\mingw64\bin' >> $GITHUB_PATH
-          echo 'MW_MINGW64_LOC=/c/ProgramData/mingw64/mingw64/' >> $GITHUB_ENV
 
       - name: Build binary on macOS 15 Intel
         if: ${{ matrix.os == 'macos-15-intel' }}
@@ -198,7 +197,7 @@ jobs:
           wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${UBUNTU_VERSION}/x86_64/cuda-keyring_1.1-1_all.deb
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt-get update -q
-          sudo apt-get install -y cuda-toolkit-12-4
+          sudo apt-get install -y cuda-toolkit
           echo "/usr/local/cuda/bin" >> $GITHUB_PATH
           echo "CUDA_PATH=/usr/local/cuda" >> $GITHUB_ENV
 
