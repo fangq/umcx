@@ -68,9 +68,15 @@ jobs:
       - name: Debug crash with Dr. Memory (Windows only)
         if: ${{ runner.os == 'Windows' }}
         run: |
-          DRMEM=$(find /c/ProgramData/chocolatey/lib/drmemory -name "drmemory.exe" 2>/dev/null | head -1)
+          for p in \
+            "/c/Program Files (x86)/Dr. Memory/bin64/drmemory.exe" \
+            "/c/Program Files/Dr. Memory/bin64/drmemory.exe" \
+            "/c/ProgramData/chocolatey/bin/drmemory.exe" \
+            "/c/ProgramData/chocolatey/lib/drmemory/tools/bin64/drmemory.exe"; do
+            [ -f "$p" ] && DRMEM="$p" && break
+          done
           echo "Found Dr. Memory at: $DRMEM"
-          "$DRMEM" -light -- bin/umcx cube60 || true
+          [ -n "$DRMEM" ] && "$DRMEM" -light -- bin/umcx cube60 || true
 
       - name: Run tests
         run: |
