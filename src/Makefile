@@ -13,6 +13,10 @@ OBJS = $(SRC:.cpp=.o)
 
 OMPACC=-fopenmp
 
+ifeq ($(OS),Windows_NT)
+    USERLINKFLAGS += -static-libgcc -static-libstdc++
+endif
+
 ifneq (,$(filter $(MAKECMDGOALS),nvc))
     OMPACC=-mp=gpu
 endif
