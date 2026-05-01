@@ -37,11 +37,11 @@ using the fewest possible lines of rule-formatted code.
 
 umcx is designed around the following objectives:
 
-- Must be as short as possible after rule-based code formatting
-- Must support MCX's core functionality: 3D voxel-based Monte Carlo photon simulations with JSON inputs/outputs
-- Must support both CPU and GPU hardware across different vendors
-- Must be standard-compliant and compilable with diverse compilers
-- Must be easily readable, easy to modify, and easy to adapt
+- Must be shorter than 1000 lines after rule-based code formatting (**Portability, Adaptability**)
+- Must support MCX's core functionality: 3D voxel-based Monte Carlo photon simulations with JSON inputs/outputs (**Compatibility, GPU-Acceleration**)
+- Must support both CPU and GPU hardware across different vendors (**Portability**)
+- Must be standard-compliant and compilable with diverse compilers (**Portability, Reusability**)
+- Must be easily readable, easy to modify, and easy to adapt (**Readability, Adaptability**)
 
 To meet these objectives, umcx is implemented with:
 
@@ -230,6 +230,58 @@ make nvc
 ```bash
 cd src
 make amd
+```
+
+### CMake-based compilation
+
+CMake (≥ 3.5) is supported as an alternative build system. The `CMakeLists.txt`
+is located in `src/` alongside the Makefile.
+
+```bash
+cd src
+cmake -B ../build          # configure (default: OMP backend)
+cmake --build ../build     # compile
+```
+
+The binary is placed in `../bin/umcx`, matching the Makefile output location.
+
+**CMake options:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `BACKEND` | `OMP` | Backend: `OMP` `SINGLE` `NVIDIA` `NVIDIA_CLANG` `AMD` `AMD_CLANG` `NVC` |
+| `ACC` | `OFF` | Use OpenACC instead of OpenMP for the `NVC` backend |
+| `DEBUG` | `OFF` | Enable `DEBUG` preprocessor define |
+| `CUDA_PATH` | *(empty)* | CUDA installation path for `NVIDIA_CLANG` backend |
+
+**Examples:**
+
+```bash
+# CPU multi-core (default, equivalent to make multi)
+cmake -B ../build -DBACKEND=OMP && cmake --build ../build
+
+# NVIDIA GPU via nvc++ with OpenMP offload (equivalent to make nvc)
+cmake -B ../build -DCMAKE_CXX_COMPILER=nvc++ -DBACKEND=NVC
+cmake --build ../build
+
+# NVIDIA GPU via nvc++ with OpenACC (equivalent to make nvc ACC=on)
+cmake -B ../build -DCMAKE_CXX_COMPILER=nvc++ -DBACKEND=NVC -DACC=ON
+cmake --build ../build
+
+# NVIDIA GPU via GCC offload (equivalent to make nvidia)
+cmake -B ../build -DBACKEND=NVIDIA && cmake --build ../build
+
+# NVIDIA GPU via Clang (equivalent to make nvidiaclang)
+cmake -B ../build -DCMAKE_CXX_COMPILER=clang++ -DBACKEND=NVIDIA_CLANG \
+      -DCUDA_PATH=/usr/local/cuda
+cmake --build ../build
+
+# AMD GPU via GCC offload (equivalent to make amd)
+cmake -B ../build -DBACKEND=AMD && cmake --build ../build
+
+# AMD GPU via Clang (equivalent to make amdclang)
+cmake -B ../build -DCMAKE_CXX_COMPILER=clang++ -DBACKEND=AMD_CLANG
+cmake --build ../build
 ```
 
 ### Code formatting

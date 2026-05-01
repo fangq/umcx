@@ -14,7 +14,9 @@ OBJS = $(SRC:.cpp=.o)
 OMPACC=-fopenmp
 
 ifeq ($(OS),Windows_NT)
-    USERLINKFLAGS += -static-libgcc -static-libstdc++
+    ifneq ($(findstring g++,$(CXX)),)
+        USERLINKFLAGS += -static-libgcc -static-libstdc++
+    endif
 endif
 
 ifneq (,$(filter $(MAKECMDGOALS),nvc))
