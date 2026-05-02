@@ -34,9 +34,10 @@ endif
 GFX      ?= gfx906
 SM       ?= sm_50
 AMDCXX   ?= /opt/rocm/llvm/bin/clang++
+CC_ARCH  ?= cc70,cc80,cc86,cc90,ptx
 
 nvc: CXX=nvc++
-nvc: CXXFLAGS+=-Minfo=mp,accel -Minline -gpu=mem:managed,ptxinfo,ccall -static-nvidia
+nvc: CXXFLAGS+=-Minfo=mp,accel -Minline -gpu=mem:managed,ptxinfo,ccall,$(CC_ARCH) -static-nvidia
 amdclang: CXX=$(AMDCXX)
 amdclang: CXXFLAGS+=-target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$(GFX) -fcf-protection=none -fno-stack-protector
 amd: CXXFLAGS+=-foffload=amdgcn-amdhsa="-march=$(GFX)" -foffload="-lm" -fcf-protection=none -fno-stack-protector
