@@ -1,8 +1,8 @@
 # Authors
 
 Micro-Monte Carlo eXtreme (uMCX) was developed by Dr. Qianqian Fang.
-Qianqian is currently Associate Professor in the 
-Department of Bioengineering at Northeastern University, USA.
+Qianqian is currently Professor in the Department of Bioengineering
+at Northeastern University, USA.
 
 - Address: Dept. of Bioengineering
   Northeastern University

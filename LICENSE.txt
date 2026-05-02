@@ -2,7 +2,7 @@
 =        Micro Monte Carlo eXtreme (uMCX) -- OpenMP         =
 =============================================================
 
-Copyright (c) 2024-2025  Qianqian Fang <q.fang at neu.edu>
+Copyright (c) 2024-2026  Qianqian Fang <q.fang at neu.edu>
 
 =============================================================
 

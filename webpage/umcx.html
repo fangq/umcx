@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en" class="theme-midnight">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>uMCX - Shortest GPU-accelerated 3D Monte Carlo Photon Simulator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@300;400;600;700&family=Ubuntu:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ══ THEMES ══════════════════════════════════════════════════════════════ */
+    .theme-ocean {
+      --bg:       #eaeff9;
+      --sd:       #c3c8d4;
+      --sl:       #ffffff;
+      --primary:  #2E5CB8;
+      --pd:       #1e3f8a;
+      --pl:       #5c85d6;
+      --text:     #37426b;
+      --muted:    #7886a8;
+      --green:    #27ae60;
+      --orange:   #e67e22;
+      --red:      #c0392b;
+      --even-bg:  #ecf1fa;
+      --card-bg:  var(--bg);
+      --code-fg:  var(--text);
+    }
+    .theme-midnight {
+      --bg:       #1a1d2e;
+      --sd:       #34374d;
+      --sl:       #7b7e95;
+      --primary:  #cc8649;
+      --pd:       #3d6fdb;
+      --pl:       #a8c0ff;
+      --text:     #c8d0e7;
+      --muted:    #8892b0;
+      --green:    #4ec994;
+      --orange:   #ff9d6c;
+      --red:      #f7768e;
+      --even-bg:  #1c2036;
+      --card-bg:  var(--bg);
+      --code-fg:  var(--text);
+    }
+    .theme-emerald {
+      --bg:       #1a2420;
+      --sd:       #111a16;
+      --sl:       #222e28;
+      --primary:  #4caf82;
+      --pd:       #2d7a5a;
+      --pl:       #7dd4a8;
+      --text:     #c8d4c8;
+      --muted:    #7a9a88;
+      --green:    #a3e678;
+      --orange:   #ffb86c;
+      --red:      #ff8a80;
+      --even-bg:  #1c2822;
+      --card-bg:  var(--bg);
+      --code-fg:  var(--text);
+    }
+
+    /* ══ RESET & BASE ════════════════════════════════════════════════════════ */
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      font-family: 'Ubuntu', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+      transition: background .35s, color .35s;
+    }
+
+    ::-webkit-scrollbar { width:8px; height:8px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--sd); border-radius:4px; }
+
+    /* ══ NEOMORPHISM ═════════════════════════════════════════════════════════ */
+    .neo       { background:var(--bg); border-radius:var(--rad);
+                 box-shadow: 7px 7px 14px var(--sd), -7px -7px 14px var(--sl); }
+    .neo-sm    { background:var(--bg); border-radius:var(--radsm);
+                 box-shadow: 4px 4px 9px var(--sd), -4px -4px 9px var(--sl); }
+    .neo-in    { background:var(--bg); border-radius:var(--radsm);
+                 box-shadow: inset 4px 4px 9px var(--sd), inset -4px -4px 9px var(--sl); }
+    .neo-in-lg { background:var(--bg); border-radius:var(--rad);
+                 box-shadow: inset 6px 6px 14px var(--sd), inset -6px -6px 14px var(--sl); }
+
+    :root { --rad:16px; --radsm:10px; }
+
+    /* ══ NAV ═════════════════════════════════════════════════════════════════ */
+    nav {
+      position:fixed; top:0; left:0; right:0; height:60px; z-index:1000;
+      background: var(--bg);
+      display:flex; align-items:center; justify-content:space-between; padding:0 28px;
+      box-shadow: 0 5px 14px var(--sd), 0 -2px 6px var(--sl);
+      transition: background .35s, box-shadow .35s;
+    }
+    .logo { font-family:'Titillium Web',sans-serif; font-size:24px; font-weight:700;
+            color:var(--primary); letter-spacing:1px; flex-shrink:0; }
+    .nav-links { display:flex; gap:6px; list-style:none; flex-wrap:nowrap; }
+    .nav-links a {
+      color:var(--muted); text-decoration:none; font-size:12.5px; font-weight:600;
+      padding:6px 13px; border-radius:var(--radsm); cursor:pointer; transition:.2s;
+      background:var(--bg);
+      box-shadow: 3px 3px 7px var(--sd), -3px -3px 7px var(--sl);
+      white-space:nowrap;
+    }
+    .nav-links a:hover  { color:var(--primary); box-shadow: 5px 5px 10px var(--sd), -5px -5px 10px var(--sl); }
+    .nav-links a.active { color:var(--primary); box-shadow: inset 3px 3px 7px var(--sd), inset -3px -3px 7px var(--sl); }
+
+    /* theme switcher */
+    .theme-switcher { display:flex; gap:7px; align-items:center; margin-left:14px; flex-shrink:0; }
+    .theme-dot {
+      width:19px; height:19px; border-radius:50%; border:2.5px solid transparent;
+      cursor:pointer; transition:.2s; outline:none;
+    }
+    .theme-dot:hover { transform:scale(1.15); }
+    .theme-dot.active { border-color:var(--text); transform:scale(1.2); }
+    .dot-ocean   { background: linear-gradient(135deg,#5c85d6,#1e3f8a); }
+    .dot-midnight{ background: linear-gradient(135deg,#232740,#111320); }
+    .dot-emerald { background: linear-gradient(135deg,#4caf82,#1a2420); }
+
+    /* ══ SECTIONS ════════════════════════════════════════════════════════════ */
+    .slider-container { margin-top:60px; height:calc(100vh - 60px); overflow-y:auto; scroll-behavior:smooth; }
+    section {
+      min-height:calc(100vh - 60px); display:flex; align-items:center;
+      justify-content:center; padding:50px 36px; background:var(--bg);
+      transition: background .35s;
+    }
+    section:nth-child(even) { background:var(--even-bg); }
+    .section-content { max-width:1120px; width:100%; }
+    .section-title { font-family:'Titillium Web',sans-serif; font-size:32px; font-weight:700;
+                     color:var(--primary); text-align:center; margin-bottom:10px; }
+    .section-sub   { font-size:15px; color:var(--muted); text-align:center; margin-bottom:32px; }
+
+    /* ══ HERO ════════════════════════════════════════════════════════════════ */
+    #hero { padding-top:30px; padding-bottom:30px; }
+    .hero-header { text-align:center; margin-bottom:24px; padding-bottom:18px;
+                   border-bottom:2px solid rgba(46,92,184,.2); }
+    .hero-header h1 { font-family:'Titillium Web',sans-serif; font-size:44px; font-weight:700;
+                      color:var(--primary); }
+    .hero-header p  { font-size:17px; color:var(--muted); margin:10px 0 16px; }
+    .hero-badges { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+    .badge {
+      padding:5px 14px; border-radius:20px; font-size:12px; font-weight:600;
+      background:var(--bg); box-shadow: 3px 3px 7px var(--sd), -3px -3px 7px var(--sl);
+      color:var(--primary);
+    }
+    .badge-gpu  { color:var(--green); }
+
+    .hero-body { display:flex; gap:0; border-radius:var(--rad); overflow:hidden;
+                 box-shadow: 9px 9px 18px var(--sd), -9px -9px 18px var(--sl); min-height:440px; }
+    .hero-sidebar {
+      width:160px; display:flex; flex-direction:column;
+      background:var(--even-bg); border-right:1px solid rgba(128,128,200,.12);
+    }
+    .hero-tab-btn {
+      flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:8px; padding:20px 10px; border:none; background:transparent; cursor:pointer;
+      font-family:'Ubuntu',sans-serif; font-size:12px; font-weight:600; color:var(--muted);
+      border-bottom:1px solid rgba(128,128,200,.1); transition:.25s;
+    }
+    .hero-tab-btn:last-child { border-bottom:none; }
+    .hero-tab-btn .icon { font-size:28px; }
+    .hero-tab-btn:hover  { color:var(--primary); }
+    .hero-tab-btn.active { background:var(--bg); color:var(--primary);
+                           box-shadow:inset -4px 0 0 var(--primary); }
+    .hero-pane { flex:1; padding:28px 36px; overflow-y:auto; background:var(--bg); }
+    .hero-pane-content { display:none; animation:fadeSlide .35s ease; }
+    .hero-pane-content.active { display:block; }
+    @keyframes fadeSlide {
+      from { opacity:0; transform:translateX(18px); }
+      to   { opacity:1; transform:translateX(0); }
+    }
+
+    .pane-h2 { font-family:'Titillium Web',sans-serif; font-size:22px; font-weight:700;
+               color:var(--primary); margin-bottom:12px; }
+    .pane-p  { font-size:14px; color:var(--muted); line-height:1.65; margin-bottom:10px; }
+
+    .stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:18px 0; }
+    .stat-card { padding:16px 10px; border-radius:var(--radsm); text-align:center;
+                 box-shadow: 5px 5px 11px var(--sd), -5px -5px 11px var(--sl); background:var(--bg); }
+    .stat-num  { font-family:'Titillium Web',sans-serif; font-size:26px; font-weight:700; color:var(--primary); }
+    .stat-lbl  { font-size:11px; color:var(--muted); font-weight:600; margin-top:4px; }
+
+    .info-box {
+      padding:14px 18px; border-radius:var(--radsm); margin:16px 0;
+      box-shadow: inset 3px 3px 8px var(--sd), inset -3px -3px 8px var(--sl);
+    }
+    .info-box h4 { font-size:13px; font-weight:700; color:var(--orange); margin-bottom:6px; }
+    .info-box p  { font-size:13px; color:var(--muted); line-height:1.6; }
+    .info-box a  { color:var(--primary); }
+
+    .hero-btns { display:flex; gap:12px; flex-wrap:wrap; margin-top:20px; }
+    .btn {
+      padding:9px 22px; border-radius:var(--radsm); font-size:13px; font-weight:600;
+      text-decoration:none; cursor:pointer; border:none; font-family:'Ubuntu',sans-serif;
+      transition:.2s; display:inline-block;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--pl), var(--pd)); color:#fff;
+      box-shadow: 4px 4px 10px var(--sd), -4px -4px 10px var(--sl);
+    }
+    .btn-primary:hover { box-shadow: 6px 6px 14px var(--sd), -6px -6px 14px var(--sl); }
+    .btn-neo { background:var(--bg); color:var(--primary);
+               box-shadow: 4px 4px 10px var(--sd), -4px -4px 10px var(--sl); }
+    .btn-neo:hover { box-shadow: 6px 6px 14px var(--sd), -6px -6px 14px var(--sl); }
+
+    .perf-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:14px; }
+    .perf-card { padding:16px; border-radius:var(--radsm);
+                 box-shadow: 5px 5px 11px var(--sd), -5px -5px 11px var(--sl); background:var(--bg); }
+    .perf-card h4 { font-size:14px; font-weight:700; color:var(--primary); margin-bottom:8px; }
+    .perf-card ul { margin-left:16px; font-size:13px; color:var(--muted); line-height:1.7; }
+
+    /* ══ TABLES ══════════════════════════════════════════════════════════════ */
+    .ctable { width:100%; border-collapse:collapse; font-size:13px; margin:12px 0; }
+    .ctable th { background:var(--primary); color:#fff; padding:9px 12px; text-align:left; font-weight:600; }
+    .ctable td { padding:9px 12px; border-bottom:1px solid rgba(128,128,200,.12); color:var(--text); }
+    .ctable tr:last-child td { border-bottom:none; }
+    .ctable tr:nth-child(even) td { background:rgba(128,128,200,.05); }
+    .ctable code { font-family:'JetBrains Mono',monospace; font-size:11.5px;
+                   background:rgba(128,128,200,.1); padding:1px 5px; border-radius:4px; }
+    .ok   { color:var(--green); font-weight:700; }
+    .part { color:var(--orange); font-weight:700; }
+    .tri  { color:var(--muted); font-weight:600; }
+    .fail { color:var(--red); font-weight:700; }
+
+    /* ══ FEATURES ════════════════════════════════════════════════════════════ */
+    .feat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+                 gap:20px; margin-top:28px; }
+    .feat-card { padding:22px; border-radius:var(--rad); text-align:center;
+                 box-shadow: 7px 7px 14px var(--sd), -7px -7px 14px var(--sl); transition:.25s;
+                 background:var(--bg); }
+    .feat-card:hover { box-shadow: 10px 10px 20px var(--sd), -10px -10px 20px var(--sl); }
+    .feat-icon { font-size:34px; margin-bottom:12px; }
+    .feat-card h3 { font-family:'Titillium Web',sans-serif; font-size:16px; font-weight:700;
+                    color:var(--primary); margin-bottom:8px; }
+    .feat-card p  { font-size:13px; color:var(--muted); line-height:1.6; }
+
+    /* ══ COMPARISON ══════════════════════════════════════════════════════════ */
+    .cmp-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:32px; }
+    .cmp-card  { padding:20px 12px; border-radius:var(--rad); text-align:center;
+                 box-shadow: 6px 6px 13px var(--sd), -6px -6px 13px var(--sl); background:var(--bg); }
+    .cmp-num   { font-family:'Titillium Web',sans-serif; font-size:30px; font-weight:700; color:var(--primary); }
+    .cmp-lbl   { font-size:12px; color:var(--muted); font-weight:600; margin-top:4px; }
+    .cmp-sub   { font-size:11px; color:var(--muted); margin-top:2px; opacity:.8; }
+
+    .cmp-two { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:28px; }
+    .cmp-panel { border-radius:var(--rad); overflow:hidden;
+                 box-shadow: 7px 7px 14px var(--sd), -7px -7px 14px var(--sl); }
+    .cmp-panel-hdr { padding:12px 18px; background:var(--primary); }
+    .cmp-panel-hdr h3 { font-family:'Titillium Web',sans-serif; font-size:16px; font-weight:700;
+                        color:#fff; }
+    .cmp-panel-body { padding:0; background:var(--bg); }
+    .feat-row { display:grid; grid-template-columns:1fr 60px 60px; align-items:center;
+                padding:8px 16px; border-bottom:1px solid rgba(128,128,200,.1); font-size:13px; }
+    .feat-row:last-child { border-bottom:none; }
+    .feat-row:nth-child(even) { background:rgba(128,128,200,.04); }
+    .feat-name { color:var(--text); }
+    .feat-val  { text-align:center; font-size:15px; }
+
+    /* ══ USAGE ═══════════════════════════════════════════════════════════════ */
+    .sub-tabs { display:flex; gap:6px; margin-bottom:18px; flex-wrap:wrap; }
+    .sub-btn {
+      padding:8px 18px; border:none; border-radius:var(--radsm); cursor:pointer;
+      font-size:13px; font-weight:600; font-family:'Ubuntu',sans-serif;
+      background:var(--bg); color:var(--muted); transition:.2s;
+      box-shadow: 3px 3px 7px var(--sd), -3px -3px 7px var(--sl);
+    }
+    .sub-btn:hover { color:var(--primary); }
+    .sub-btn.active { color:var(--primary);
+                      box-shadow: inset 3px 3px 7px var(--sd), inset -3px -3px 7px var(--sl); }
+    .sub-pane { display:none; }
+    .sub-pane.active { display:block; animation:fadeSlide .3s ease; }
+
+    .code-wrap {
+      border-radius:var(--rad); padding:22px;
+      box-shadow: inset 5px 5px 12px var(--sd), inset -5px -5px 12px var(--sl);
+      overflow-x:auto; max-height:58vh; overflow-y:auto; background:var(--bg);
+    }
+    .code-wrap pre { margin:0; font-family:'JetBrains Mono','Consolas','Courier New',monospace;
+                     font-size:12.5px; line-height:1.65; color:var(--code-fg); }
+    .kw  { color:var(--primary); font-weight:600; }
+    .str { color:var(--green); }
+    .cmt { color:var(--muted); font-style:italic; }
+    .num { color:var(--orange); }
+
+    .build-note { margin-top:14px; padding:14px 18px; border-radius:var(--radsm);
+                  border-left:4px solid var(--primary);
+                  box-shadow: inset 3px 3px 7px var(--sd), inset -3px -3px 7px var(--sl);
+                  background:var(--bg); }
+    .build-note h4 { font-size:13px; font-weight:700; color:var(--primary); margin-bottom:8px; }
+    .build-note p  { font-size:13px; color:var(--muted); line-height:1.6; margin-top:6px; }
+
+    /* ══ HARDWARE ════════════════════════════════════════════════════════════ */
+    .hw-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:28px; }
+    .hw-card { padding:20px; border-radius:var(--rad); background:var(--bg);
+               box-shadow: 6px 6px 13px var(--sd), -6px -6px 13px var(--sl); }
+    .hw-card h3 { font-family:'Titillium Web',sans-serif; font-size:16px; font-weight:700;
+                  color:var(--primary); margin-bottom:10px; padding-bottom:8px;
+                  border-bottom:2px solid rgba(128,128,200,.15); }
+    .hw-card p  { font-size:13px; color:var(--muted); line-height:1.65; margin-bottom:6px; }
+    .hw-card code { font-family:'JetBrains Mono',monospace; font-size:12px;
+                    background:rgba(128,128,200,.1); padding:1px 5px; border-radius:4px; }
+
+    /* ══ INSTALL ═════════════════════════════════════════════════════════════ */
+    .install-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+                    gap:20px; margin-top:28px; }
+    .install-card { padding:22px; border-radius:var(--rad); background:var(--bg);
+                    box-shadow: 6px 6px 13px var(--sd), -6px -6px 13px var(--sl); }
+    .install-card h3 { font-family:'Titillium Web',sans-serif; font-size:16px; font-weight:700;
+                       color:var(--primary); margin-bottom:10px; }
+    .install-card p  { font-size:13px; color:var(--muted); margin-bottom:10px; line-height:1.5; }
+    .install-card .code-sm {
+      border-radius:var(--radsm); padding:14px; font-family:'JetBrains Mono','Consolas',monospace;
+      font-size:12px; color:var(--primary); line-height:1.7;
+      box-shadow: inset 3px 3px 8px var(--sd), inset -3px -3px 8px var(--sl); background:var(--bg);
+    }
+
+    /* ══ DOWNLOAD ════════════════════════════════════════════════════════════ */
+    #download { background: linear-gradient(160deg, var(--pd) 0%, var(--primary) 50%, var(--pl) 100%) !important; }
+    #download .section-title { color:#fff; }
+    #download .section-sub   { color:rgba(255,255,255,.8); }
+    .dl-stats { display:flex; justify-content:center; gap:50px; flex-wrap:wrap; margin:30px 0; }
+    .dl-stat-num { font-family:'Titillium Web',sans-serif; font-size:40px; font-weight:700;
+                   color:#fff; text-align:center; margin-bottom:4px; }
+    .dl-stat-lbl { font-size:13px; color:rgba(255,255,255,.8); text-align:center; }
+    .dl-btns { display:flex; gap:14px; flex-wrap:wrap; justify-content:center; margin-top:10px; }
+    .btn-dl-primary { padding:11px 28px; border-radius:var(--radsm); font-size:14px; font-weight:600;
+                      background:#fff; color:var(--primary); text-decoration:none;
+                      box-shadow:0 4px 14px rgba(0,0,0,.2); transition:.2s; }
+    .btn-dl-primary:hover { box-shadow:0 6px 20px rgba(0,0,0,.3); }
+    .btn-dl-ghost { padding:11px 28px; border-radius:var(--radsm); font-size:14px; font-weight:600;
+                    background:transparent; color:#fff; text-decoration:none;
+                    border:2px solid rgba(255,255,255,.6); transition:.2s; }
+    .btn-dl-ghost:hover { background:rgba(255,255,255,.12); }
+
+    /* ══ RESPONSIVE ══════════════════════════════════════════════════════════ */
+    @media(max-width:900px){
+      nav { padding:0 12px; }
+      .nav-links { gap:2px; }
+      .nav-links a { padding:5px 8px; font-size:11px; }
+      .hero-body { flex-direction:column; }
+      .hero-sidebar { width:100%; flex-direction:row; overflow-x:auto; }
+      .hero-tab-btn { flex:none; min-width:80px; }
+      .hero-tab-btn.active { box-shadow:inset 0 -4px 0 var(--primary); }
+      .perf-grid, .hw-grid, .cmp-two { grid-template-columns:1fr; }
+      .stats-row, .cmp-stats { grid-template-columns:repeat(2,1fr); }
+      section { padding:40px 18px; }
+    }
+  </style>
+</head>
+<body>
+
+<nav id="main-nav">
+  <div class="logo">&#956;MCX</div>
+  <ul class="nav-links">
+    <li><a href="javascript:void(0)" onclick="gotoSection('hero')">Home</a></li>
+    <li><a href="javascript:void(0)" onclick="gotoSection('features')">Features</a></li>
+    <li><a href="javascript:void(0)" onclick="gotoSection('comparison')">vs MCX</a></li>
+    <li><a href="javascript:void(0)" onclick="gotoSection('usage')">Usage</a></li>
+    <li><a href="javascript:void(0)" onclick="gotoSection('hardware')">Hardware</a></li>
+    <li><a href="javascript:void(0)" onclick="gotoSection('install')">Install</a></li>
+    <li><a href="javascript:void(0)" onclick="gotoSection('download')">Download</a></li>
+  </ul>
+  <div class="theme-switcher" title="Switch theme">
+    <button class="theme-dot dot-ocean" data-theme="theme-ocean"    title="Ocean (light)"></button>
+    <button class="theme-dot dot-midnight active"        data-theme="theme-midnight" title="Midnight (dark)"></button>
+    <button class="theme-dot dot-emerald"         data-theme="theme-emerald"  title="Emerald (dark)"></button>
+  </div>
+</nav>
+
+<div class="slider-container" id="sc">
+
+<!-- ════════════════════ HERO ════════════════════ -->
+<section id="hero">
+  <div class="section-content">
+    <div class="hero-header">
+      <h1>&#956;MCX</h1>
+      <p>The shortest GPU-accelerated 3D <strong>Monte Carlo photon transport</strong> simulator &mdash; in <1000 lines of portable C++11</p>
+      <div class="hero-badges">
+        <span class="badge">v0.5</span>
+        <span class="badge badge-gpu">NVIDIA GPU</span>
+        <span class="badge badge-gpu">AMD GPU</span>
+        <span class="badge badge-gpu">CPU Multi-core</span>
+        <span class="badge">OpenMP 4.5</span>
+        <span class="badge">OpenACC 2.0</span>
+        <span class="badge">C++11</span>
+        <span class="badge">JSON I/O</span>
+        <span class="badge">GPL v3</span>
+        <span class="badge">NIH Funded</span>
+      </div>
+    </div>
+
+    <div class="hero-body">
+      <div class="hero-sidebar">
+        <button class="hero-tab-btn active" onclick="heroTab('ov',this)">
+          <span class="icon">&#128300;</span>Overview
+        </button>
+        <button class="hero-tab-btn" onclick="heroTab('physics',this)">
+          <span class="icon">&#128161;</span>Physics
+        </button>
+        <button class="hero-tab-btn" onclick="heroTab('perf',this)">
+          <span class="icon">&#9889;</span>Performance
+        </button>
+      </div>
+
+      <div class="hero-pane">
+
+        <div id="ov" class="hero-pane-content active">
+          <p class="pane-h2">&#128300; What is uMCX?</p>
+          <p class="pane-p"><strong>uMCX (&#956;MCX)</strong> is a miniaturized, maximally portable Monte Carlo photon transport simulator. It simulates light propagation in 3D voxelated turbid media such as biological tissues, with GPU acceleration — all in under 1000 lines of clean, rule-formatted C++11 code.</p>
+          <div class="info-box">
+            <h4>&#127942; MCX Project</h4>
+            <p>Part of the <a href="https://mcx.space">MCX project</a>, supported by US NIH grant R01-GM114365. uMCX is backward-compatible with MCX JSON input files — existing MCX simulations run with minimal modification.</p>
+          </div>
+          <div class="stats-row">
+            <div class="stat-card"><div class="stat-num">&lt;1000</div><div class="stat-lbl">Lines of Code</div></div>
+            <div class="stat-card"><div class="stat-num">24&#xD7;</div><div class="stat-lbl">Fewer lines than MCX</div></div>
+            <div class="stat-card"><div class="stat-num">3</div><div class="stat-lbl">GPU Vendors</div></div>
+          </div>
+          <div class="hero-btns">
+            <a href="https://github.com/fangq/umcx" class="btn btn-primary">GitHub</a>
+            <a onclick="gotoSection('comparison')" class="btn btn-neo" style="cursor:pointer">vs MCX</a>
+            <a href="https://mcx.space" class="btn btn-neo">MCX Project</a>
+            <a href="https://neurojson.io" class="btn btn-neo">NeuroJSON.io</a>
+          </div>
+        </div>
+
+        <div id="physics" class="hero-pane-content">
+          <p class="pane-h2">&#128161; Photon Transport Physics</p>
+          <p class="pane-p">uMCX implements the gold-standard stochastic Monte Carlo method for simulating photon migration in turbid media. Each photon is tracked from launch to absorption or escape.</p>
+          <div class="perf-grid">
+            <div class="perf-card">
+              <h4>&#127919; Scattering</h4>
+              <ul><li>Henyey-Greenstein phase function</li><li>Per-voxel anisotropy factor <em>g</em></li><li>xorshift128+ RNG (one per thread)</li></ul>
+            </div>
+            <div class="perf-card">
+              <h4>&#128256; Boundaries</h4>
+              <ul><li>Refractive index mismatch</li><li>Fresnel reflection / refraction</li><li>Configurable reflective boundaries</li></ul>
+            </div>
+            <div class="perf-card">
+              <h4>&#128200; Output</h4>
+              <ul><li>Fluence rate / fluence / energy deposition</li><li>Time-gated 4D output (Nx&times;Ny&times;Nz&times;Nt)</li><li>Detected photon partial path lengths</li></ul>
+            </div>
+            <div class="perf-card">
+              <h4>&#128161; Sources</h4>
+              <ul><li>Pencil, isotropic, cone beam</li><li>Disk (top-hat), planar widefield</li><li>Widefield launch from outside domain</li></ul>
+            </div>
+          </div>
+        </div>
+
+        <div id="perf" class="hero-pane-content">
+          <p class="pane-h2">&#9889; Performance</p>
+          <p class="pane-p">uMCX achieves competitive performance on all hardware via OpenMP 4.5 GPU offloading. Benchmarked on <code style="font-family:monospace;font-size:12px">cube60</code> with 100M photons:</p>
+          <table class="ctable" style="margin-top:14px">
+            <thead><tr><th>Hardware</th><th>Build</th><th>Speed</th></tr></thead>
+            <tbody>
+              <tr><td>NVIDIA RTX 5090</td><td><code>make nvc</code></td><td>175075 photon/ms (vs mcxcl: 204499 p/ms, mcx: 201613 p/ms)</td></tr>
+              <tr><td>NVIDIA RTX 4090</td><td><code>make nvc</code></td><td>133894 photon/ms (vs mcxcl: 166945 p/ms, mcx: 168350 p/ms)</td></tr>
+              <tr><td>NVIDIA RTX 3090</td><td><code>make nvc</code></td><td>63331 photon/ms (vs mcxcl: 123001 p/ms, mcx: 114679 p/ms)</td></tr>
+              <tr><td>AMD Radeon VII (gfx906)</td><td><code>make amdclang</code></td><td>~1780 photon/ms</td></tr>
+              <tr><td>AMD Threadripper 3990X (128 threads)</td><td><code>make multi</code></td><td>~3034 photon/ms</td></tr>
+            </tbody>
+          </table>
+          <div class="info-box" style="margin-top:14px">
+            <h4>&#128221; Forward-compatible NVIDIA builds</h4>
+            <p>GCC/Clang NVIDIA builds embed PTX (virtual ISA). The CUDA driver JIT-compiles PTX at runtime, so a binary compiled with <code style="font-family:monospace;font-size:12px">SM=sm_50</code> runs correctly on any newer NVIDIA GPU generation.</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════ FEATURES ════════════════════ -->
+<section id="features">
+  <div class="section-content">
+    <h2 class="section-title">Key Features</h2>
+    <p class="section-sub">Readable &middot; Portable &middot; GPU-accelerated &middot; MCX-compatible</p>
+    <div class="feat-grid">
+      <div class="feat-card">
+        <div class="feat-icon">&#128196;</div>
+        <h3>Shortest Implementation</h3>
+        <p>Under 1000 lines of clean C++11 after <code>astyle</code> formatting — 24&times; fewer than MCX while covering its core functionality.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">&#127381;</div>
+        <h3>Multi-Vendor GPU</h3>
+        <p>Single source compiles for NVIDIA (nvc++, GCC nvptx, Clang), AMD (ROCm clang++), and CPU via OpenMP 4.5 / OpenACC 2.0.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">&#128260;</div>
+        <h3>MCX-Compatible JSON I/O</h3>
+        <p>Reads MCX JSON input files unchanged. Outputs fluence volumes and detected photon data as Binary JData (BNII / JDB) files.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">&#128202;</div>
+        <h3>Time-Gated Simulation</h3>
+        <p>Configurable time windows produce 4D fluence volumes (Nx&times;Ny&times;Nz&times;Nt) for time-domain optical imaging.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">&#128246;</div>
+        <h3>Photon Detection</h3>
+        <p>Circular detectors record partial path lengths per medium, exit position, and exit direction for DRS/DCS analysis.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">&#127760;</div>
+        <h3>NeuroJSON.io Cloud</h3>
+        <p>Browse and download MCX simulation datasets from <a href="https://neurojson.io" style="color:var(--primary)">neurojson.io</a> directly with <code>umcx -N colin27</code>.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">&#128064;</div>
+        <h3>Shape-Based Domain</h3>
+        <p>Build 3D tissue models from geometric primitives: sphere, box, cylinder, X/Y/Z layer slabs — or supply a pre-computed label volume.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">&#128295;</div>
+        <h3>CMake + Makefile</h3>
+        <p>Both build systems supported. One-line compile for each target. Auto-formatting with <code>astyle</code> ensures canonical line count.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════ COMPARISON ════════════════════ -->
+<section id="comparison">
+  <div class="section-content">
+    <h2 class="section-title">Comparison with MCX</h2>
+    <p class="section-sub">Same physics core &mdash; 24&times; fewer lines of code</p>
+
+    <div class="cmp-stats">
+      <div class="cmp-card">
+        <div class="cmp-num">843</div>
+        <div class="cmp-lbl">uMCX lines</div>
+        <div class="cmp-sub">after astyle formatting</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-num">20,188</div>
+        <div class="cmp-lbl">MCX core lines</div>
+        <div class="cmp-sub">C/CUDA source</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-num">24&#xD7;</div>
+        <div class="cmp-lbl">Code reduction</div>
+        <div class="cmp-sub">same core physics</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-num">3</div>
+        <div class="cmp-lbl">GPU vendors</div>
+        <div class="cmp-sub">vs NVIDIA-only MCX</div>
+      </div>
+    </div>
+
+    <div class="cmp-two">
+      <!-- Code size table -->
+      <div class="cmp-panel">
+        <div class="cmp-panel-hdr"><h3>&#128196; Code size by module</h3></div>
+        <div class="cmp-panel-body">
+          <table class="ctable">
+            <thead><tr><th>MCX file</th><th>MCX lines</th><th>uMCX equivalent</th><th>uMCX lines</th><th>Reduction</th></tr></thead>
+            <tbody>
+              <tr><td><code>mcx.c</code></td><td>90</td><td><code>main()</code></td><td>8</td><td>11&times;</td></tr>
+              <tr><td><code>mcx_shapes.c/.h</code></td><td>940</td><td><code>MCX_userio::initdomain()</code></td><td>43</td><td>21&times;</td></tr>
+              <tr><td><code>mcx_tictoc.c/.h</code></td><td>313</td><td><code>MCX_clock</code></td><td>8</td><td>32&times;</td></tr>
+              <tr><td><code>mcx_utils.c/.h</code></td><td>6036</td><td><code>MCX_userio</code></td><td>247</td><td>24&times;</td></tr>
+              <tr><td><code>mcx_core.cu/.h</code></td><td>4875</td><td><code>MCX_kernel / MCX_photon / MCX_detect</code></td><td>382</td><td>13&times;</td></tr>
+              <tr><td><code>mcx_rand_xorshift128p.cu</code></td><td>140</td><td><code>MCX_rand</code></td><td>29</td><td>5&times;</td></tr>
+              <tr><td><strong>Total (core)</strong></td><td><strong>20,188</strong></td><td><strong>Total</strong></td><td><strong>843</strong></td><td><strong>24&times;</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Feature comparison -->
+      <div class="cmp-panel">
+        <div class="cmp-panel-hdr"><h3>&#10003; Feature coverage</h3></div>
+        <div class="cmp-panel-body">
+          <div class="feat-row" style="background:rgba(128,128,200,.08);font-weight:700;font-size:12px">
+            <span class="feat-name">Feature</span>
+            <span class="feat-val">MCX</span>
+            <span class="feat-val">uMCX</span>
+          </div>
+          <div class="feat-row"><span class="feat-name">3D voxelated domain</span><span class="feat-val ok">&#10004;</span><span class="feat-val ok">&#10004;</span></div>
+          <div class="feat-row"><span class="feat-name">Time-resolved simulation</span><span class="feat-val ok">&#10004;</span><span class="feat-val ok">&#10004;</span></div>
+          <div class="feat-row"><span class="feat-name">Detected photon data</span><span class="feat-val ok">&#10004;</span><span class="feat-val ok">&#10004;</span></div>
+          <div class="feat-row"><span class="feat-name">Boundary reflection</span><span class="feat-val ok">&#10004;</span><span class="feat-val ok">&#10004;</span></div>
+          <div class="feat-row"><span class="feat-name">JSON input / BJData output</span><span class="feat-val ok">&#10004;</span><span class="feat-val ok">&#10004;</span></div>
+          <div class="feat-row"><span class="feat-name">Shape-based media</span><span class="feat-val ok">&#10004;</span><span class="feat-val ok">&#10004;</span></div>
+          <div class="feat-row"><span class="feat-name">Widefield source launch</span><span class="feat-val ok">&#10004;</span><span class="feat-val ok">&#10004;</span></div>
+          <div class="feat-row"><span class="feat-name">NVIDIA GPU</span><span class="feat-val ok">&#10004;</span><span class="feat-val ok">&#10004;</span></div>
+          <div class="feat-row"><span class="feat-name">AMD / Intel GPU</span><span class="feat-val part">mcxcl</span><span class="feat-val ok">&#10004;</span></div>
+          <div class="feat-row"><span class="feat-name">Source types</span><span class="feat-val ok">&#10004;</span><span class="feat-val part">5/15</span></div>
+          <div class="feat-row"><span class="feat-name">Det. photon output fields</span><span class="feat-val ok">&#10004;</span><span class="feat-val part">4/8</span></div>
+          <div class="feat-row"><span class="feat-name">Built-in benchmarks</span><span class="feat-val ok">&#10004;</span><span class="feat-val part">7/10</span></div>
+          <div class="feat-row"><span class="feat-name">Multi-GPU simulation</span><span class="feat-val ok">&#10004;</span><span class="feat-val fail">&#8212;</span></div>
+          <div class="feat-row"><span class="feat-name">Photon replay / sharing</span><span class="feat-val ok">&#10004;</span><span class="feat-val fail">&#8212;</span></div>
+          <div class="feat-row"><span class="feat-name">Patterned / multi-source</span><span class="feat-val ok">&#10004;</span><span class="feat-val fail">&#8212;</span></div>
+          <div class="feat-row"><span class="feat-name">Polarized light / SVMC</span><span class="feat-val ok">&#10004;</span><span class="feat-val fail">&#8212;</span></div>
+          <div class="feat-row"><span class="feat-name">MATLAB / Python bindings</span><span class="feat-val ok">&#10004;</span><span class="feat-val tri">trivial</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="build-note" style="margin-top:24px">
+      <h4>Legend</h4>
+      <p>
+        <span class="ok">&#10004;</span> fully supported &nbsp;&nbsp;
+        <span class="part">p/n</span> partial (fraction of total variants) &nbsp;&nbsp;
+        <span class="tri">trivial</span> easily implementable but omitted to minimize code length &nbsp;&nbsp;
+        <span class="fail">&#8212;</span> not implemented
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════ USAGE ════════════════════ -->
+<section id="usage">
+  <div class="section-content">
+    <h2 class="section-title">Usage</h2>
+    <p class="section-sub">Multiple ways to run a simulation</p>
+
+    <div class="sub-tabs">
+      <button class="sub-btn active" onclick="subTab('usage','u-bench',this)">Built-in Benchmark</button>
+      <button class="sub-btn"        onclick="subTab('usage','u-json',this)">JSON Input File</button>
+      <button class="sub-btn"        onclick="subTab('usage','u-flags',this)">Command-line Flags</button>
+      <button class="sub-btn"        onclick="subTab('usage','u-net',this)">NeuroJSON.io</button>
+      <button class="sub-btn"        onclick="subTab('usage','u-workflow',this)">Typical Workflow</button>
+    </div>
+
+    <div id="u-bench" class="sub-pane active">
+      <div class="code-wrap neo-in-lg"><pre><code><span class="cmt"># Run a built-in benchmark (default: 1M photons)</span>
+umcx cube60
+umcx -Q skinvessel
+
+<span class="cmt"># Override photon count</span>
+umcx -Q cube60 -n 1e7
+
+<span class="cmt"># Print benchmark configuration as JSON (no simulation)</span>
+umcx --bench cube60 --dumpjson
+
+<span class="cmt"># Available benchmarks:</span>
+<span class="cmt">#   cube60       60^3 homogeneous cube, pencil source</span>
+<span class="cmt">#   cube60b      same + Fresnel boundary reflection</span>
+<span class="cmt">#   cube60planar same + planar 40x40 mm widefield source</span>
+<span class="cmt">#   cubesph60b   60^3 cube with embedded sphere (r=15)</span>
+<span class="cmt">#   sphshells    three concentric spherical shells</span>
+<span class="cmt">#   spherebox    sphere in cube with 0.1 ns time gate</span>
+<span class="cmt">#   skinvessel   200^3 realistic skin + cylindrical vessel</span></code></pre></div>
+    </div>
+
+    <div id="u-json" class="sub-pane">
+      <div class="code-wrap neo-in-lg"><pre><code><span class="cmt"># Run from a JSON input file</span>
+umcx myinput.json
+
+<span class="cmt"># Minimal JSON structure:</span>
+<span class="str">{
+  "Session":  { "ID": "mysim", "Photons": 1000000 },
+  "Forward":  { "T0": 0, "T1": 5e-9, "Dt": 5e-9 },
+  "Domain": {
+    "Dim": [60, 60, 60],
+    "LengthUnit": 1,
+    "Media": [
+      { "mua": 0.00, "mus": 0.0, "g": 1.00, "n": 1.00 },
+      { "mua": 0.02, "mus": 9.0, "g": 0.89, "n": 1.37 }
+    ]
+  },
+  "Optode": {
+    "Source": { "Type": "pencil", "Pos": [30,30,0], "Dir": [0,0,1] }
+  },
+  "Shapes": [ { "Grid": { "Tag": 1, "Size": [60,60,60] } } ]
+}</span>
+
+<span class="cmt"># Outputs: mysim.bnii  (fluence volume)</span>
+<span class="cmt">#          mysim_detp.jdb  (detected photon data)</span></code></pre></div>
+    </div>
+
+    <div id="u-flags" class="sub-pane">
+      <div class="code-wrap neo-in-lg"><pre><code>umcx -f input.json          <span class="cmt"># load JSON file</span>
+umcx -Q cube60              <span class="cmt"># built-in benchmark</span>
+umcx -n 1e7                 <span class="cmt"># photon count</span>
+umcx -s myresult            <span class="cmt"># output file name prefix</span>
+umcx -b 1                   <span class="cmt"># enable boundary reflection</span>
+umcx -d 0                   <span class="cmt"># disable detected photon saving</span>
+umcx -U 0                   <span class="cmt"># disable output normalization</span>
+umcx -O f                   <span class="cmt"># output type: f=fluence, x=fluence-rate, e=energy</span>
+umcx -G 2                   <span class="cmt"># select GPU device ID (1-based)</span>
+umcx -t 200000 -T 64        <span class="cmt"># total threads and block size</span>
+umcx -w 53                  <span class="cmt"># savedetflag: 1+4+16+32</span>
+umcx -E 12345               <span class="cmt"># RNG seed</span>
+
+<span class="cmt"># Override JSON fields inline</span>
+umcx -Q cube60 -j <span class="str">'{"Session":{"Photons":5000000}}'</span>
+umcx myinput.json --json <span class="str">'{"Optode":{"Source":{"Type":"isotropic"}}}'</span></code></pre></div>
+    </div>
+
+    <div id="u-net" class="sub-pane">
+      <div class="code-wrap neo-in-lg"><pre><code><span class="cmt"># Requires curl to be installed</span>
+
+<span class="cmt"># List all available MCX simulations on NeuroJSON.io</span>
+umcx -N
+
+<span class="cmt"># Download and immediately run a simulation from the cloud</span>
+umcx -N colin27
+umcx -N skinvessel
+
+<span class="cmt"># Download, override photon count, and run</span>
+umcx -N colin27 -n 5e6
+
+<span class="cmt"># Fetches from https://neurojson.io:7777/mcx/&lt;name&gt;</span>
+<span class="cmt"># Executed locally — no data upload.</span></code></pre></div>
+    </div>
+
+    <div id="u-workflow" class="sub-pane">
+      <div class="code-wrap neo-in-lg"><pre><code><span class="cmt"># 1. Compile (CPU multi-core, default)</span>
+cd src &amp;&amp; make
+
+<span class="cmt"># 2. Inspect a built-in benchmark as JSON</span>
+./bin/umcx --bench cube60 --dumpjson > mycube.json
+
+<span class="cmt"># 3. Edit mycube.json (geometry, media, source, photon count)</span>
+
+<span class="cmt"># 4. Run the simulation</span>
+./bin/umcx mycube.json -n 1e7
+
+<span class="cmt"># Console output example:</span>
+<span class="cmt">#   simulated energy 10000000, speed 3245 photon/ms,</span>
+<span class="cmt">#   duration 3082 ms, normalizer 2e-10,</span>
+<span class="cmt">#   detected 4123, absorbed 17.3%</span>
+
+<span class="cmt"># 5. Read outputs in MATLAB (JData toolbox)</span>
+<span class="cmt">#    vol = loadjson('mycube.bnii');       % fluence-rate volume</span>
+<span class="cmt">#    det = loadjson('mycube_detp.jdb');   % detected photon data</span>
+
+<span class="cmt"># 6. Read outputs in Python (jdata package)</span>
+<span class="cmt">#    import jdata; vol = jdata.load('mycube.bnii')</span></code></pre></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════════════════ HARDWARE ════════════════════ -->
+<section id="hardware">
+  <div class="section-content">
+    <h2 class="section-title">Hardware Support</h2>
+    <p class="section-sub">Tested on Linux x86-64 &mdash; OpenMP 4.5 / OpenACC 2.0</p>
+
+    <table class="ctable" style="margin-bottom:28px">
+      <thead>
+        <tr><th>Make target</th><th>Compiler</th><th>Hardware</th><th>Status</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>make</code> / <code>make multi</code></td><td><code>g++</code> &ge;12</td><td>CPU (multi-core)</td><td><span class="ok">&#10004; Works</span></td><td>Standard OpenMP threading; default build</td></tr>
+        <tr><td><code>make single</code></td><td><code>g++</code> &ge;12</td><td>CPU (single-core)</td><td><span class="ok">&#10004; Works</span></td><td>No threading; useful for debugging</td></tr>
+        <tr><td><code>make nvc</code></td><td><code>nvc++</code></td><td>NVIDIA GPU (OpenMP)</td><td><span class="ok">&#10004; Works</span></td><td>Best NVIDIA perf; requires CUDA driver at runtime</td></tr>
+        <tr><td><code>make nvc ACC=on</code></td><td><code>nvc++</code></td><td>NVIDIA GPU (OpenACC)</td><td><span class="ok">&#10004; Works</span></td><td>OpenACC path; similar performance to nvc</td></tr>
+        <tr><td><code>make nvidia</code></td><td><code>g++</code> &ge;12</td><td>NVIDIA GPU</td><td><span class="ok">&#10004; Works</span></td><td>GCC nvptx; PTX forward compat; CPU fallback if no GPU</td></tr>
+        <tr><td><code>make nvidiaclang</code></td><td><code>clang++</code> &ge;16</td><td>NVIDIA GPU</td><td><span class="ok">&#10004; Works</span></td><td>Clang nvptx64; set <code>CUDA_PATH</code></td></tr>
+        <tr><td><code>make amdclang</code></td><td>ROCm <code>clang++</code> &ge;17</td><td>AMD GPU</td><td><span class="ok">&#10004; Works</span></td><td>ROCm &ge;6.1; set <code>GFX=gfx906</code> etc.</td></tr>
+        <tr><td><code>make amd</code></td><td><code>g++</code> &ge;12</td><td>AMD GPU</td><td><span class="fail">&#10008; Broken</span></td><td>GCC 13 libgomp-plugin-amdgcn runtime bug</td></tr>
+      </tbody>
+    </table>
+
+    <div class="hw-grid">
+      <div class="hw-card">
+        <h3>&#128260; NVIDIA GPU</h3>
+        <p><strong><code>make nvc</code></strong> (NVIDIA HPC SDK): full GPU support. Requires <code>libcuda.so</code> at runtime — no CPU fallback if the CUDA driver is absent.</p>
+        <p><strong><code>make nvidia</code> / <code>make nvidiaclang</code></strong>: embed PTX (NVIDIA virtual ISA). The driver JIT-compiles PTX at runtime &rarr; forward-compatible with newer GPU generations. Falls back to CPU if no GPU detected.</p>
+        <p>Architecture: <code>make nvidia SM=sm_86</code> &nbsp; Default: <code>SM=sm_50</code></p>
+      </div>
+      <div class="hw-card">
+        <h3>&#128260; AMD GPU</h3>
+        <p><strong><code>make amdclang</code></strong> (ROCm clang++ &ge;17): full AMD GPU support via OpenMP target offload. Override compiler with <code>AMDCXX=</code>.</p>
+        <p><strong><code>make amd</code></strong> (GCC): broken — GCC 13 <code>libgomp-plugin-amdgcn1</code> crashes even a trivial kernel. Use <code>make amdclang</code> instead.</p>
+        <p>No forward compat: <code>gfx906</code> binary will not run on <code>gfx1010</code> or newer. Set: <code>make amdclang GFX=gfx1100</code> &nbsp; Default: <code>GFX=gfx906</code></p>
+      </div>
+      <div class="hw-card">
+        <h3>&#128187; CPU</h3>
+        <p><strong><code>make</code></strong> or <strong><code>make multi</code></strong>: parallel execution via OpenMP on all CPU cores. No GPU required.</p>
+        <p>Works on any x86-64 Linux / macOS / Windows with GCC &ge;12 or compatible compiler.</p>
+        <p>Benchmarked: ~3034 photon/ms on 128-thread AMD Threadripper 3990X (10M photons, cube60).</p>
+      </div>
+      <div class="hw-card">
+        <h3>&#127758; Portability Notes</h3>
+        <p>Unlike OpenCL (JIT at runtime), OpenMP/OpenACC compiles AOT to a specific ISA. A single binary targets <strong>one GPU architecture per vendor</strong>.</p>
+        <p>GCC supports fat binaries with multiple <code>-foffload=</code> targets to cover several GPU generations in one binary.</p>
+        <p>Standards: OpenMP 4.5 (pointer attachment de facto; formal in 5.0) &nbsp;&#183;&nbsp; OpenACC 2.0</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════ INSTALL ════════════════════ -->
+<section id="install">
+  <div class="section-content">
+    <h2 class="section-title">Compilation</h2>
+    <p class="section-sub">All builds start from the <code>src/</code> directory</p>
+    <div class="install-grid">
+
+      <div class="install-card">
+        <h3>&#128187; CPU (default)</h3>
+        <p>GCC &ge;12 with OpenMP. Runs on any x86-64 Linux / macOS / Windows.</p>
+        <div class="code-sm">sudo apt-get install g++-14
+cd src &amp;&amp; make</div>
+      </div>
+
+      <div class="install-card">
+        <h3>&#128260; NVIDIA GPU &mdash; nvc++</h3>
+        <p>Download NVIDIA HPC SDK from developer.nvidia.com/hpc-sdk, then:</p>
+        <div class="code-sm">export PATH=/opt/nvidia/hpc_sdk/.../bin:$PATH
+cd src &amp;&amp; make nvc</div>
+      </div>
+
+      <div class="install-card">
+        <h3>&#128260; NVIDIA GPU &mdash; GCC</h3>
+        <p>Requires GCC with nvptx offload libraries:</p>
+        <div class="code-sm">sudo apt-get install g++-14 gcc-14-offload-nvptx
+cd src &amp;&amp; make nvidia</div>
+      </div>
+
+      <div class="install-card">
+        <h3>&#128260; AMD GPU &mdash; ROCm clang++</h3>
+        <p>Requires ROCm &ge;6.1. Specify your GPU architecture:</p>
+        <div class="code-sm">cd src
+make amdclang GFX=gfx1100   # RDNA 3 (RX 7000)
+make amdclang GFX=gfx906    # Radeon VII / Vega 20
+# rocminfo | grep gfx       # find your arch</div>
+      </div>
+
+      <div class="install-card">
+        <h3>&#9881;&#65039; CMake</h3>
+        <p>CMake &ge;3.5 is supported as an alternative build system:</p>
+        <div class="code-sm">cd src
+cmake -B ../build -DBACKEND=OMP
+cmake --build ../build
+
+# NVIDIA via nvc++:
+cmake -B ../build \
+  -DCMAKE_CXX_COMPILER=nvc++ -DBACKEND=NVC
+
+# AMD via ROCm clang++:
+cmake -B ../build \
+  -DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++ \
+  -DBACKEND=AMD_CLANG -DGFX=gfx1100</div>
+      </div>
+
+      <div class="install-card">
+        <h3>&#128462;&#65039; From GitHub</h3>
+        <p>Clone the repository and compile:</p>
+        <div class="code-sm">git clone https://github.com/fangq/umcx.git
+cd umcx/src
+make            # CPU
+make nvc        # NVIDIA GPU (nvc++)
+make amdclang   # AMD GPU (ROCm)</div>
+        <p style="margin-top:8px; font-size:12px; color:var(--muted)">Binary placed in <code>../bin/umcx</code></p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════ DOWNLOAD ════════════════════ -->
+<section id="download">
+  <div class="section-content" style="text-align:center">
+    <h2 class="section-title">Get uMCX</h2>
+    <p class="section-sub">Open source &middot; Single file &middot; No dependencies beyond a C++11 compiler</p>
+    <div class="dl-stats">
+      <div><div class="dl-stat-num">0.5</div><div class="dl-stat-lbl">Current Version</div></div>
+      <div><div class="dl-stat-num">&lt;1000</div><div class="dl-stat-lbl">Lines of Code</div></div>
+      <div><div class="dl-stat-num">24&#xD7;</div><div class="dl-stat-lbl">Fewer than MCX</div></div>
+      <div><div class="dl-stat-num">3</div><div class="dl-stat-lbl">GPU Vendors</div></div>
+    </div>
+    <div class="dl-btns">
+      <a href="https://github.com/fangq/umcx/releases" class="btn-dl-primary">Download Latest Release</a>
+      <a href="https://github.com/fangq/umcx" class="btn-dl-ghost">GitHub Repository</a>
+      <a href="https://mcx.space" class="btn-dl-ghost">MCX Project</a>
+    </div>
+    <p style="margin-top:48px; color:rgba(255,255,255,.7); font-size:13px">
+      Supported by NIH Grant R01-GM114365 &nbsp;&#183;&nbsp; GPL v3 License
+    </p>
+    <p style="margin-top:8px; color:rgba(255,255,255,.6); font-size:12px">
+      Copyright &copy; 2025&ndash;2026 Qianqian Fang &lt;q.fang@neu.edu&gt;
+    </p>
+  </div>
+</section>
+
+</div><!-- /slider-container -->
+
+<script>
+function gotoSection(id) {
+  const sc = document.getElementById('sc');
+  const el = document.getElementById(id);
+  if (sc && el) sc.scrollTop = el.offsetTop;
+}
+
+function heroTab(id, btn) {
+  document.querySelectorAll('.hero-pane-content').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.hero-tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+
+function subTab(section, id, btn) {
+  const sec = document.getElementById(section);
+  sec.querySelectorAll('.sub-pane').forEach(p => p.classList.remove('active'));
+  sec.querySelectorAll('.sub-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+
+/* theme switcher */
+document.querySelectorAll('.theme-dot').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.theme-dot').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.documentElement.className = btn.dataset.theme;
+  });
+});
+
+/* nav active highlight on scroll */
+const sc    = document.getElementById('sc');
+const secs  = document.querySelectorAll('section');
+const links = document.querySelectorAll('.nav-links a');
+sc.addEventListener('scroll', () => {
+  let cur = '';
+  secs.forEach(s => { if (sc.scrollTop >= s.offsetTop - 120) cur = s.id; });
+  links.forEach(a => {
+    const fn = a.getAttribute('onclick') || '';
+    a.classList.toggle('active', cur !== '' && fn.includes("'" + cur + "'"));
+  });
+});
+</script>
+</body>
+</html>

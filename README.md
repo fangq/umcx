@@ -16,15 +16,16 @@
 2. [Features](#features)
 3. [Comparison with MCX](#comparison-with-mcx)
 4. [How to compile umcx](#how-to-compile-umcx)
-5. [How to use umcx](#how-to-use-umcx)
-6. [Command-line flags](#command-line-flags)
-7. [Input file format](#input-file-format)
-8. [Output file format](#output-file-format)
-9. [Source types](#source-types)
-10. [Built-in benchmarks](#built-in-benchmarks)
-11. [How to run built-in tests](#how-to-run-built-in-tests)
-12. [How to build documentation](#how-to-build-documentation)
-13. [Acknowledgement](#acknowledgement)
+5. [Hardware support status](#hardware-support-status)
+6. [How to use umcx](#how-to-use-umcx)
+7. [Command-line flags](#command-line-flags)
+8. [Input file format](#input-file-format)
+9. [Output file format](#output-file-format)
+10. [Source types](#source-types)
+11. [Built-in benchmarks](#built-in-benchmarks)
+12. [How to run built-in tests](#how-to-run-built-in-tests)
+13. [How to build documentation](#how-to-build-documentation)
+14. [Acknowledgement](#acknowledgement)
 
 ---
 
@@ -46,7 +47,7 @@ umcx is designed around the following objectives:
 To meet these objectives, umcx is implemented with:
 
 - **C++11**: Clean, object-oriented, portable standard C++
-- **OpenMP 5 / OpenACC 4.2**: GPU offloading that works across NVIDIA, AMD, and Intel GPUs
+- **OpenMP 4.5 / OpenACC 2.0**: GPU offloading that works across NVIDIA, AMD, and Intel GPUs
 - **JSON I/O**: Human-readable input/output using the [JSON for Modern C++](https://github.com/nlohmann/json) library and the [JData](https://neurojson.org/jdata) binary serialization format
 
 umcx is backward-compatible with the [MCX](https://mcx.space) JSON input format,
@@ -67,7 +68,7 @@ allowing existing MCX simulations to run with minimal modification.
 - JSON and Binary JData (BJDATA/BNII) input/output compatible with MCX
 - Built-in benchmark cases for validation
 - Online simulation database access via [NeuroJSON.io](https://neurojson.io)
-- GPU offloading via OpenMP 5 (`target`) and OpenACC 4.2 (`acc`)
+- GPU offloading via OpenMP 4.5 (`target`) and OpenACC 2.0 (`acc`)
 - Single-source, single-file implementation (~840 lines)
 
 ---
@@ -253,6 +254,7 @@ The binary is placed in `../bin/umcx`, matching the Makefile output location.
 | `ACC` | `OFF` | Use OpenACC instead of OpenMP for the `NVC` backend |
 | `DEBUG` | `OFF` | Enable `DEBUG` preprocessor define |
 | `CUDA_PATH` | *(empty)* | CUDA installation path for `NVIDIA_CLANG` backend |
+| `CC_ARCH` | `cc70,cc80,cc86,cc90,ptx` | nvc++ GPU targets; `ptx` embeds PTX for JIT-based forward compatibility with future GPUs |
 
 **Examples:**
 
@@ -298,6 +300,98 @@ This requires `astyle` to be installed:
 ```bash
 sudo apt-get install astyle
 ```
+
+---
+
+## Hardware support status
+
+The table below summarizes the current hardware support status for each
+compilation target. Status is tested on Linux x86-64.
+
+| Make target | Compiler | Hardware | Status | Notes |
+|-------------|----------|----------|:------:|-------|
+| `make` / `make multi` | `g++` ≥ 12 | CPU (multi-core) | ✔ Works | Standard OpenMP threading; default build |
+| `make single` | `g++` ≥ 12 | CPU (single-core) | ✔ Works | No threading; useful for debugging |
+| `make nvc` | `nvc++` | NVIDIA GPU (OpenMP) | ✔ Works | Best NVIDIA performance via `libcuda.so` |
+| `make nvc ACC=on` | `nvc++` | NVIDIA GPU (OpenACC) | ✔ Works | OpenACC path; similar performance to `nvc` |
+| `make nvidia` | `g++` ≥ 12 | NVIDIA GPU | ✔ Works | GCC nvptx offloading; falls back to CPU if no GPU |
+| `make nvidiaclang` | `clang++` ≥ 16 | NVIDIA GPU | ✔ Works | Clang nvptx64 offloading; requires `--cuda-path` |
+| `make amdclang` | ROCm `clang++` ≥ 17 | AMD GPU | ✔ Works | Requires ROCm ≥ 6.1; specify `GFX=<arch>` |
+| `make amd` | `g++` ≥ 12 | AMD GPU | ✘ Broken | GCC 13 `libgomp-plugin-amdgcn` runtime bug (see below) |
+
+### NVIDIA GPU
+
+- **`make nvc`** (NVIDIA HPC SDK `nvc++`): Full NVIDIA GPU support via
+  OpenMP `target` or OpenACC `kernels`. This binary **requires** the CUDA
+  driver (`libcuda.so`) to be present at runtime even with `-static-nvidia`
+  (which only statically links `libcudart`, not the driver API). There is no
+  automatic CPU fallback if the CUDA driver is absent — the process will
+  abort with a library-not-found error.
+
+  The default `CC_ARCH=cc70,cc80,cc86,cc90,ptx` embeds native CUBIN for
+  common Turing–Hopper GPUs plus PTX as a JIT fallback for any GPU not
+  explicitly listed. The CUDA driver JIT-compiles the PTX at first run (result
+  is cached), so the same binary runs on future architectures without
+  recompilation. PTX forward compatibility is bounded by the HPC SDK version
+  used to build: nvc++ 24.11 supports up to sm_90; for RTX 5090 (cc120 /
+  Blackwell) use HPC SDK 25.1 or later. Override with e.g.
+  `make nvc CC_ARCH=cc90,cc100,cc120,ptx` to add explicit Blackwell support.
+
+- **`make nvidia`** (GCC nvptx) and **`make nvidiaclang`** (Clang nvptx64):
+  These embed PTX (NVIDIA's virtual ISA) in the binary. The CUDA driver JIT-
+  compiles the PTX for the actual GPU at runtime, so a binary compiled with
+  `SM=sm_50` will run correctly on newer GPU generations (sm_70, sm_86,
+  sm_90, …) — forward compatibility is preserved. If no GPU is detected,
+  libgomp falls back to executing the target region on the CPU.
+
+- **Architecture selection** (`SM`): Override with e.g. `make nvidia SM=sm_86`
+  or `cmake -DSM=sm_86`. The default `sm_50` (Maxwell) is safe for most
+  NVIDIA GPUs since Pascal (2016) and later.
+
+### AMD GPU
+
+- **`make amdclang`** (ROCm `clang++` ≥ 17, roc-6.1.1 tested): Full AMD GPU
+  support via OpenMP `target` offloading. The default compiler path is
+  `/opt/rocm/llvm/bin/clang++`; override with `make amdclang AMDCXX=/path/to/clang++`.
+
+- **`make amd`** (GCC ≥ 12 `libgomp-plugin-amdgcn`): **Currently broken** —
+  even a trivial GPU kernel crashes at runtime with a `Memory access fault /
+  Page not present` error. The root cause is a bug in GCC 13's
+  `libgomp-plugin-amdgcn1` where the per-team state buffer pointer is
+  uninitialized. Use `make amdclang` instead.
+
+- **No forward compatibility**: Unlike NVIDIA's PTX, AMD GCN ISA is tied to a
+  specific GPU generation. A binary compiled for `gfx906` (Radeon VII /
+  Vega 20) will **not** run on `gfx1010` (RDNA 1) or newer architectures.
+  Always specify the correct architecture: `make amdclang GFX=gfx1100` for
+  RDNA 3 (RX 7000 series), `GFX=gfx90a` for MI200, etc. Run
+  `rocminfo | grep gfx` to find your GPU's architecture string.
+
+- **Architecture selection** (`GFX`): Override with e.g.
+  `make amdclang GFX=gfx1030` or `cmake -DGFX=gfx1030`. Default is `gfx906`.
+
+### Portability summary
+
+Unlike OpenCL (which compiles to a portable IR and JITs at runtime for any
+supported GPU), OpenMP/OpenACC offloading compiles AOT (Ahead-Of-Time) to a
+specific ISA. A single umcx binary can only target **one GPU architecture per
+vendor** unless you specify multiple `-foffload` targets at compile time (GCC
+supports fat binaries with multiple `-foffload=` flags).
+
+| Scenario | Behavior |
+|----------|----------|
+| Run `nvc`-built binary without NVIDIA GPU/driver | **Aborts** — CUDA driver required |
+| Run `nvc`-built binary on a GPU newer than `CC_ARCH` | Works — PTX fallback JIT-compiled by CUDA driver (requires HPC SDK new enough to know the GPU's PTX ISA) |
+| Run `nvidia`/`nvidiaclang`-built binary without GPU | Falls back to CPU |
+| Run `nvidia`-built `SM=sm_50` binary on newer NVIDIA GPU | Works — PTX is JIT-compiled |
+| Run `amdclang`-built `GFX=gfx906` binary on a different AMD GPU | **Fails** — wrong ISA |
+| Run CPU (`make`) binary on any x86-64 machine | Works — no GPU needed |
+
+> **Standards note:** umcx uses OpenMP 4.5 for GPU offloading (`target teams distribute parallel for`,
+> `reduction` on combined target constructs) and OpenACC 2.0 (`firstprivate`, `atomic capture`).
+> The struct-plus-pointer-member mapping pattern (`map(to: s, s.ptr[0:N])`) relies on pointer
+> attachment behavior that all modern compilers implement correctly for OpenMP 4.5, though the
+> formal spec guarantee was added in OpenMP 5.0.
 
 ---
 
