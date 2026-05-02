@@ -77,11 +77,11 @@ elseif(BACKEND STREQUAL "NVIDIA")
     target_compile_options(umcx PRIVATE
         ${_ompacc} -foffload=nvptx-none -foffload=-lm
         -fcf-protection=none -fno-stack-protector)
-    set(_link_flags "${_ompacc} -foffload=nvptx-none")
+    set(_link_flags "${_ompacc} -foffload=nvptx-none -no-pie")
 
 elseif(BACKEND STREQUAL "NVIDIA_CLANG")
     target_compile_options(umcx PRIVATE
-        ${_ompacc} -fopenmp-targets=nvptx64 --cuda-gpu-arch=${SM} -Wno-openmp-mapping)
+        ${_ompacc} -fopenmp-targets=nvptx64 --cuda-gpu-arch=${SM} -Wno-openmp-mapping -Wno-unused-command-line-argument)
     if(CUDA_PATH)
         target_compile_options(umcx PRIVATE --cuda-path=${CUDA_PATH})
     endif()
@@ -91,7 +91,7 @@ elseif(BACKEND STREQUAL "AMD")
     target_compile_options(umcx PRIVATE
         ${_ompacc} -foffload=amdgcn-amdhsa=-march=${GFX} -foffload=-lm
         -fcf-protection=none -fno-stack-protector)
-    set(_link_flags "${_ompacc} -foffload=amdgcn-amdhsa=-march=${GFX}")
+    set(_link_flags "${_ompacc} -foffload=amdgcn-amdhsa=-march=${GFX} -no-pie")
 
 elseif(BACKEND STREQUAL "AMD_CLANG")
     target_compile_options(umcx PRIVATE

@@ -8,6 +8,9 @@
   supported by US National Institute of Health (NIH)
   grant [R01-GM114365](https://reporter.nih.gov/search/sh5OXnkFp06HiLmhHXRj-Q/project-details/10701664#description)
 
+
+[![uMCX CI](https://github.com/fangq/umcx/actions/workflows/run_test.yml/badge.svg)](https://github.com/fangq/umcx/actions/workflows/run_test.yml)
+
 ---
 
 ## Table of Contents

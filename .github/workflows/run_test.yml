@@ -2,6 +2,9 @@ name: uMCX CI
 
 on: [push, pull_request]
 
+env:
+  KMP_WARNINGS: "0"
+
 jobs:
   no_gpu_test:
     name: CPU test
@@ -60,8 +63,6 @@ jobs:
           make
 
       - name: Run benchmarks
-        env:
-          KMP_WARNINGS: "0"
         run: |
           cd bin
           ./umcx cube60
@@ -72,10 +73,8 @@ jobs:
           cd test
           ./testumcx.sh
 
-      - name: CMake OpenACC CPU (Linux and macOS)
-        if: ${{ runner.os == 'Linux' || runner.os == 'macOS' }}
-        env:
-          KMP_WARNINGS: "0"
+      - name: CMake OpenACC CPU (Linux)
+        if: ${{ runner.os == 'Linux' }}
         run: |
           cmake -B build_omp_acc -S src -DBACKEND=OMP -DACC=ON
           cmake --build build_omp_acc
