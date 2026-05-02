@@ -20,8 +20,8 @@ set(BACKEND "OMP" CACHE STRING
 set_property(CACHE BACKEND PROPERTY STRINGS
     OMP SINGLE NVIDIA NVIDIA_CLANG AMD AMD_CLANG NVC)
 
-option(ACC   "Use OpenACC instead of OpenMP for the NVC backend" OFF)
-option(DEBUG "Enable DEBUG preprocessor define"                  OFF)
+option(ACC   "Use OpenACC instead of OpenMP for offload/CPU backends" OFF)
+option(DEBUG "Enable DEBUG preprocessor define"                      OFF)
 
 # Path to CUDA installation, needed by NVIDIA_CLANG (--cuda-path=...)
 set(CUDA_PATH "" CACHE PATH "CUDA installation path (NVIDIA_CLANG backend)")
@@ -46,6 +46,13 @@ if(BACKEND MATCHES "^(NVIDIA|NVIDIA_CLANG|AMD|AMD_CLANG|NVC)$")
     target_compile_definitions(umcx PRIVATE GPU_OFFLOAD)
 endif()
 
+# Resolve -fopenacc vs -fopenmp for non-NVC backends
+if(ACC AND NOT BACKEND STREQUAL "NVC" AND NOT BACKEND STREQUAL "SINGLE")
+    set(_ompacc "-fopenacc")
+else()
+    set(_ompacc "-fopenmp")
+endif()
+
 # ---------------------------------------------------------------------------
 set(_link_flags "")
 
@@ -53,41 +60,46 @@ if(BACKEND STREQUAL "SINGLE")
     # CPU single-thread, no extra flags
 
 elseif(BACKEND STREQUAL "OMP")
-    find_package(OpenMP REQUIRED)
-    target_compile_options(umcx PRIVATE ${OpenMP_CXX_FLAGS})
-    set(_link_flags "${OpenMP_CXX_FLAGS}")
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        target_compile_options(umcx PRIVATE -foffload=disable)
-        set(_link_flags "${_link_flags} -foffload=disable")
+    if(ACC)
+        target_compile_options(umcx PRIVATE ${_ompacc})
+        set(_link_flags "${_ompacc}")
+    else()
+        find_package(OpenMP REQUIRED)
+        target_compile_options(umcx PRIVATE ${OpenMP_CXX_FLAGS})
+        set(_link_flags "${OpenMP_CXX_FLAGS}")
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            target_compile_options(umcx PRIVATE -foffload=disable)
+            set(_link_flags "${_link_flags} -foffload=disable")
+        endif()
     endif()
 
 elseif(BACKEND STREQUAL "NVIDIA")
     target_compile_options(umcx PRIVATE
-        -fopenmp -foffload=nvptx-none -foffload=-lm
+        ${_ompacc} -foffload=nvptx-none -foffload=-lm
         -fcf-protection=none -fno-stack-protector)
-    set(_link_flags "-fopenmp -foffload=nvptx-none")
+    set(_link_flags "${_ompacc} -foffload=nvptx-none")
 
 elseif(BACKEND STREQUAL "NVIDIA_CLANG")
     target_compile_options(umcx PRIVATE
-        -fopenmp -fopenmp-targets=nvptx64 --cuda-gpu-arch=${SM})
+        ${_ompacc} -fopenmp-targets=nvptx64 --cuda-gpu-arch=${SM})
     if(CUDA_PATH)
         target_compile_options(umcx PRIVATE --cuda-path=${CUDA_PATH})
     endif()
-    set(_link_flags "-fopenmp")
+    set(_link_flags "${_ompacc}")
 
 elseif(BACKEND STREQUAL "AMD")
     target_compile_options(umcx PRIVATE
-        -fopenmp -foffload=amdgcn-amdhsa=-march=${GFX} -foffload=-lm
+        ${_ompacc} -foffload=amdgcn-amdhsa=-march=${GFX} -foffload=-lm
         -fcf-protection=none -fno-stack-protector)
-    set(_link_flags "-fopenmp -foffload=amdgcn-amdhsa=-march=${GFX}")
+    set(_link_flags "${_ompacc} -foffload=amdgcn-amdhsa=-march=${GFX}")
 
 elseif(BACKEND STREQUAL "AMD_CLANG")
     target_compile_options(umcx PRIVATE
         -target x86_64-pc-linux-gnu
-        -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa
+        ${_ompacc} -fopenmp-targets=amdgcn-amd-amdhsa
         -Xopenmp-target=amdgcn-amd-amdhsa -march=${GFX}
         -fcf-protection=none -fno-stack-protector)
-    set(_link_flags "-fopenmp")
+    set(_link_flags "${_ompacc}")
 
 elseif(BACKEND STREQUAL "NVC")
     if(ACC)
