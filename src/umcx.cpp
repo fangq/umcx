@@ -732,6 +732,7 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
 #ifdef GPU_OFFLOAD
     const int totaldetphotondatalen = issavedet ? detdata.maxdetphotons * detdata.detphotondatalen : 1;
     const int deviceid = cfg["Session"].value("DeviceID", 1) - 1, gridsize = cfg["Session"].value("ThreadNum", 100000) / cfg["Session"].value("BlockSize", 64);
+    (void)deviceid;
 #if defined(__GNUC__) && !defined(__clang__) && !defined(__NVCOMPILER) && !defined(__INTEL_COMPILER)
     const int blocksize = cfg["Session"].value("BlockSize", 64) / 32;  // gcc nvptx: blockdim={32,thread_limit,1}, simd fills the x=32 dimension
 #else

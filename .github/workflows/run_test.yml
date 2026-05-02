@@ -172,24 +172,24 @@ jobs:
         if: ${{ matrix.os == 'ubuntu-22.04' }}
         run: |
           cmake -B build_nvidia_acc11 -S src -DBACKEND=NVIDIA -DACC=ON -DCMAKE_CXX_COMPILER=g++-11
-          cmake --build build_nvidia_acc11 && cd test && ./testumcx.sh || true
+          cmake --build build_nvidia_acc11 && cd test && ./testumcx.sh
 
       - name: CMake OpenACC NVIDIA g++-12
         run: |
           cmake -B build_nvidia_acc12 -S src -DBACKEND=NVIDIA -DACC=ON -DCMAKE_CXX_COMPILER=g++-12
-          cmake --build build_nvidia_acc12 && cd test && ./testumcx.sh || true
+          cmake --build build_nvidia_acc12 && cd test && ./testumcx.sh
 
       - name: CMake OpenACC NVIDIA g++-13 (ubuntu-24.04)
         if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           cmake -B build_nvidia_acc13 -S src -DBACKEND=NVIDIA -DACC=ON -DCMAKE_CXX_COMPILER=g++-13
-          cmake --build build_nvidia_acc13 && cd test && ./testumcx.sh || true
+          cmake --build build_nvidia_acc13 && cd test && ./testumcx.sh
 
       - name: CMake OpenACC NVIDIA g++-14 (ubuntu-24.04)
         if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           cmake -B build_nvidia_acc14 -S src -DBACKEND=NVIDIA -DACC=ON -DCMAKE_CXX_COMPILER=g++-14
-          cmake --build build_nvidia_acc14 && cd test && ./testumcx.sh || true
+          cmake --build build_nvidia_acc14 && cd test && ./testumcx.sh
 
   clang_nvptx_gpu_offloading_test:
     name: NVIDIA GPU clang nvptx test

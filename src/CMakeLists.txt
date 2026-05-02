@@ -48,7 +48,7 @@ endif()
 
 # Resolve -fopenacc vs -fopenmp for non-NVC backends
 if(ACC AND NOT BACKEND STREQUAL "NVC" AND NOT BACKEND STREQUAL "SINGLE")
-    set(_ompacc "-fopenacc")
+    set(_ompacc "-fopenacc -Wno-unknown-pragmas")
 else()
     set(_ompacc "-fopenmp")
 endif()
@@ -61,7 +61,7 @@ if(BACKEND STREQUAL "SINGLE")
 
 elseif(BACKEND STREQUAL "OMP")
     if(ACC)
-        target_compile_options(umcx PRIVATE ${_ompacc} -Wno-unknown-pragmas)
+        target_compile_options(umcx PRIVATE ${_ompacc})
         set(_link_flags "${_ompacc}")
     else()
         find_package(OpenMP REQUIRED)
