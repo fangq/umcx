@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies (Windows only)
         if: ${{ runner.os == 'Windows' }}
         run: |
-          choco install mingw drmemory -y
+          choco install mingw -y
           echo 'C:\ProgramData\mingw64\mingw64\bin' >> $GITHUB_PATH
 
       - name: Build binary on macOS 15 Intel
@@ -62,21 +62,8 @@ jobs:
       - name: Run benchmarks
         run: |
           cd bin
-          ./umcx cube60 || true
-          ./umcx cube60b || true
-
-      - name: Debug crash with Dr. Memory (Windows only)
-        if: ${{ runner.os == 'Windows' }}
-        run: |
-          for p in \
-            "/c/Program Files (x86)/Dr. Memory/bin64/drmemory.exe" \
-            "/c/Program Files/Dr. Memory/bin64/drmemory.exe" \
-            "/c/ProgramData/chocolatey/bin/drmemory.exe" \
-            "/c/ProgramData/chocolatey/lib/drmemory/tools/bin64/drmemory.exe"; do
-            [ -f "$p" ] && DRMEM="$p" && break
-          done
-          echo "Found Dr. Memory at: $DRMEM"
-          [ -n "$DRMEM" ] && "$DRMEM" -light -- bin/umcx cube60 || true
+          ./umcx cube60
+          ./umcx cube60b
 
       - name: Run tests
         run: |
@@ -88,8 +75,7 @@ jobs:
         run: |
           cmake -B build_omp_acc -S src -DBACKEND=OMP -DACC=ON
           cmake --build build_omp_acc
-          cd bin && ./umcx cube60 || true
-          cd bin && ./umcx cube60b || true
+          cd test && ./testumcx.sh
 
   gcc_nvptx_gpu_offloading_test:
     name: NVIDIA GPU gcc nvptx test
@@ -135,7 +121,7 @@ jobs:
         if: ${{ matrix.os == 'ubuntu-22.04' }}
         run: |
           cd test
-          ./testumcx.sh || true
+          ./testumcx.sh
 
       - name: Build binary g++-12
         run: |
@@ -146,7 +132,7 @@ jobs:
       - name: Run tests for g++-12
         run: |
           cd test
-          ./testumcx.sh || true
+          ./testumcx.sh
 
       - name: Build binary g++-13
         if: ${{ matrix.os == 'ubuntu-24.04' }}
@@ -183,28 +169,24 @@ jobs:
         if: ${{ matrix.os == 'ubuntu-22.04' }}
         run: |
           cmake -B build_nvidia_acc11 -S src -DBACKEND=NVIDIA -DACC=ON -DCMAKE_CXX_COMPILER=g++-11
-          cmake --build build_nvidia_acc11 || true
-          cd bin && ./umcx cube60 || true
+          cmake --build build_nvidia_acc11 && cd test && ./testumcx.sh || true
 
       - name: CMake OpenACC NVIDIA g++-12
         run: |
           cmake -B build_nvidia_acc12 -S src -DBACKEND=NVIDIA -DACC=ON -DCMAKE_CXX_COMPILER=g++-12
-          cmake --build build_nvidia_acc12 || true
-          cd bin && ./umcx cube60 || true
+          cmake --build build_nvidia_acc12 && cd test && ./testumcx.sh || true
 
       - name: CMake OpenACC NVIDIA g++-13 (ubuntu-24.04)
         if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           cmake -B build_nvidia_acc13 -S src -DBACKEND=NVIDIA -DACC=ON -DCMAKE_CXX_COMPILER=g++-13
-          cmake --build build_nvidia_acc13 || true
-          cd bin && ./umcx cube60 || true
+          cmake --build build_nvidia_acc13 && cd test && ./testumcx.sh || true
 
       - name: CMake OpenACC NVIDIA g++-14 (ubuntu-24.04)
         if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           cmake -B build_nvidia_acc14 -S src -DBACKEND=NVIDIA -DACC=ON -DCMAKE_CXX_COMPILER=g++-14
-          cmake --build build_nvidia_acc14 || true
-          cd bin && ./umcx cube60 || true
+          cmake --build build_nvidia_acc14 && cd test && ./testumcx.sh || true
 
   clang_nvptx_gpu_offloading_test:
     name: NVIDIA GPU clang nvptx test
@@ -293,17 +275,3 @@ jobs:
           cd test
           ./testumcx.sh || true
 
-      - name: CMake OpenACC NVIDIA clang++-17
-        run: |
-          cmake -B build_nvidiaclang_acc17 -S src -DBACKEND=NVIDIA_CLANG -DACC=ON \
-            -DCMAKE_CXX_COMPILER=clang++-17 -DCUDA_PATH=/usr/local/cuda
-          cmake --build build_nvidiaclang_acc17 || true
-          cd bin && ./umcx cube60 || true
-
-      - name: CMake OpenACC NVIDIA clang++-18 (ubuntu-24.04)
-        if: ${{ matrix.os == 'ubuntu-24.04' }}
-        run: |
-          cmake -B build_nvidiaclang_acc18 -S src -DBACKEND=NVIDIA_CLANG -DACC=ON \
-            -DCMAKE_CXX_COMPILER=clang++-18 -DCUDA_PATH=/usr/local/cuda
-          cmake --build build_nvidiaclang_acc18 || true
-          cd bin && ./umcx cube60 || true
