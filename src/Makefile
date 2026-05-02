@@ -37,7 +37,7 @@ amdclang: CXX=$(AMDCXX)
 amdclang: CXXFLAGS+=-target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$(GFX) -fcf-protection=none -fno-stack-protector
 amd: CXXFLAGS+=-foffload=amdgcn-amdhsa="-march=$(GFX)" -foffload="-lm" -fcf-protection=none -fno-stack-protector
 nvidiaclang: CXX=clang++
-nvidiaclang: CXXFLAGS+=-fopenmp-targets=nvptx64 --cuda-gpu-arch=$(SM)
+nvidiaclang: CXXFLAGS+=-fopenmp-targets=nvptx64 --cuda-gpu-arch=$(SM) -Wno-openmp-mapping
 nvidia: CXXFLAGS+=-foffload=nvptx-none -foffload="-lm" -fcf-protection=none -fno-stack-protector
 nvidiaclang nvidia amd amdclang nvc: CXXFLAGS+=-DGPU_OFFLOAD
 nvidiaclang nvidia amd amdclang: omp

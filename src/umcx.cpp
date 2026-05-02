@@ -726,6 +726,7 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
     MCX_photon p(pos, dir, ran, gcfg);
 #ifdef _OPENACC
     int ppathlen = detdata.ppathlen;
+    (void)ppathlen;
     float* detphotonbuffer = (float*)calloc(sizeof(float), detdata.ppathlen);
 #endif
 #ifdef GPU_OFFLOAD

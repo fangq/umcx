@@ -60,6 +60,8 @@ jobs:
           make
 
       - name: Run benchmarks
+        env:
+          KMP_WARNINGS: "0"
         run: |
           cd bin
           ./umcx cube60
@@ -70,8 +72,10 @@ jobs:
           cd test
           ./testumcx.sh
 
-      - name: CMake OpenACC CPU (Linux)
-        if: ${{ runner.os == 'Linux' }}
+      - name: CMake OpenACC CPU (Linux and macOS)
+        if: ${{ runner.os == 'Linux' || runner.os == 'macOS' }}
+        env:
+          KMP_WARNINGS: "0"
         run: |
           cmake -B build_omp_acc -S src -DBACKEND=OMP -DACC=ON
           cmake --build build_omp_acc

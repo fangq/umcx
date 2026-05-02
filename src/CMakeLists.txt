@@ -61,7 +61,7 @@ if(BACKEND STREQUAL "SINGLE")
 
 elseif(BACKEND STREQUAL "OMP")
     if(ACC)
-        target_compile_options(umcx PRIVATE ${_ompacc})
+        target_compile_options(umcx PRIVATE ${_ompacc} -Wno-unknown-pragmas)
         set(_link_flags "${_ompacc}")
     else()
         find_package(OpenMP REQUIRED)
@@ -81,7 +81,7 @@ elseif(BACKEND STREQUAL "NVIDIA")
 
 elseif(BACKEND STREQUAL "NVIDIA_CLANG")
     target_compile_options(umcx PRIVATE
-        ${_ompacc} -fopenmp-targets=nvptx64 --cuda-gpu-arch=${SM})
+        ${_ompacc} -fopenmp-targets=nvptx64 --cuda-gpu-arch=${SM} -Wno-openmp-mapping)
     if(CUDA_PATH)
         target_compile_options(umcx PRIVATE --cuda-path=${CUDA_PATH})
     endif()
