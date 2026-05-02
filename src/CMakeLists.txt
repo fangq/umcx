@@ -26,6 +26,11 @@ option(DEBUG "Enable DEBUG preprocessor define"                  OFF)
 # Path to CUDA installation, needed by NVIDIA_CLANG (--cuda-path=...)
 set(CUDA_PATH "" CACHE PATH "CUDA installation path (NVIDIA_CLANG backend)")
 
+# AMD GPU architecture (e.g. gfx906, gfx1030, gfx1100); run: rocminfo | grep gfx
+set(GFX "gfx906" CACHE STRING "AMD GPU architecture for AMD/AMD_CLANG backends")
+# NVIDIA GPU architecture for NVIDIA_CLANG (e.g. sm_50, sm_70, sm_86)
+set(SM  "sm_50"  CACHE STRING "NVIDIA GPU SM version for NVIDIA_CLANG backend")
+
 # ---------------------------------------------------------------------------
 add_executable(umcx umcx.cpp)
 target_include_directories(umcx PRIVATE .)
@@ -62,7 +67,7 @@ elseif(BACKEND STREQUAL "NVIDIA")
 
 elseif(BACKEND STREQUAL "NVIDIA_CLANG")
     target_compile_options(umcx PRIVATE
-        -fopenmp -fopenmp-targets=nvptx64 --cuda-gpu-arch=sm_50)
+        -fopenmp -fopenmp-targets=nvptx64 --cuda-gpu-arch=${SM})
     if(CUDA_PATH)
         target_compile_options(umcx PRIVATE --cuda-path=${CUDA_PATH})
     endif()
@@ -70,15 +75,15 @@ elseif(BACKEND STREQUAL "NVIDIA_CLANG")
 
 elseif(BACKEND STREQUAL "AMD")
     target_compile_options(umcx PRIVATE
-        -fopenmp -foffload=amdgcn-amdhsa=-march=gfx906 -foffload=-lm
+        -fopenmp -foffload=amdgcn-amdhsa=-march=${GFX} -foffload=-lm
         -fcf-protection=none -fno-stack-protector)
-    set(_link_flags "-fopenmp -foffload=amdgcn-amdhsa=-march=gfx906")
+    set(_link_flags "-fopenmp -foffload=amdgcn-amdhsa=-march=${GFX}")
 
 elseif(BACKEND STREQUAL "AMD_CLANG")
     target_compile_options(umcx PRIVATE
         -target x86_64-pc-linux-gnu
         -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa
-        -Xopenmp-target=amdgcn-amd-amdhsa -march=gfx906
+        -Xopenmp-target=amdgcn-amd-amdhsa -march=${GFX}
         -fcf-protection=none -fno-stack-protector)
     set(_link_flags "-fopenmp")
 

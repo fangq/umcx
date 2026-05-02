@@ -31,12 +31,17 @@ ifneq (,$(filter $(ACC),on))
     endif
 endif
 
+GFX      ?= gfx906
+SM       ?= sm_50
+AMDCXX   ?= /opt/rocm/llvm/bin/clang++
+
 nvc: CXX=nvc++
 nvc: CXXFLAGS+=-Minfo=mp,accel -Minline -gpu=mem:managed,ptxinfo,ccall -static-nvidia
-amdclang: CXXFLAGS+=-target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=gfx906 -fcf-protection=none -fno-stack-protector
-amd: CXXFLAGS+=-foffload=amdgcn-amdhsa="-march=gfx906" -foffload="-lm" -fcf-protection=none -fno-stack-protector
+amdclang: CXX=$(AMDCXX)
+amdclang: CXXFLAGS+=-target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$(GFX) -fcf-protection=none -fno-stack-protector
+amd: CXXFLAGS+=-foffload=amdgcn-amdhsa="-march=$(GFX)" -foffload="-lm" -fcf-protection=none -fno-stack-protector
 nvidiaclang: CXX=clang++
-nvidiaclang: CXXFLAGS+=-fopenmp-targets=nvptx64 --cuda-gpu-arch=sm_50
+nvidiaclang: CXXFLAGS+=-fopenmp-targets=nvptx64 --cuda-gpu-arch=$(SM)
 nvidia: CXXFLAGS+=-foffload=nvptx-none -foffload="-lm" -fcf-protection=none -fno-stack-protector
 nvidiaclang nvidia amd amdclang nvc: CXXFLAGS+=-DGPU_OFFLOAD
 nvidiaclang nvidia amd amdclang nvc: omp
