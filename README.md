@@ -345,8 +345,9 @@ compilation target. Status is tested on Linux x86-64.
   libgomp falls back to executing the target region on the CPU.
 
 - **Architecture selection** (`SM`): Override with e.g. `make nvidia SM=sm_86`
-  or `cmake -DSM=sm_86`. The default `sm_50` (Maxwell) is safe for most
-  NVIDIA GPUs since Pascal (2016) and later.
+  or `cmake -DSM=sm_86`. The default `sm_50` (Maxwell) covers all GPUs since
+  2014; note that CUDA 12.8+ dropped ptxas support for sm_50/sm_60, so use
+  `SM=sm_70` or higher when building with a recent CUDA 12 toolkit.
 
 ### AMD GPU
 
