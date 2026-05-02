@@ -31,7 +31,7 @@ set(GFX "gfx906" CACHE STRING "AMD GPU architecture for AMD/AMD_CLANG backends")
 # NVIDIA GPU architecture for NVIDIA_CLANG (e.g. sm_50, sm_70, sm_86)
 set(SM  "sm_50"  CACHE STRING "NVIDIA GPU SM version for NVIDIA_CLANG backend")
 # nvc++ GPU targets: comma-separated cc values + optional ptx for JIT forward compat
-set(CC_ARCH "cc70,cc80,cc86,cc90,ptx" CACHE STRING "nvc++ GPU architectures for NVC backend (e.g. cc80,cc90,ptx)")
+set(CC_ARCH "cc70,cc80,cc86,cc90,ptx" CACHE STRING "nvc++ GPU architectures for NVC backend (e.g. cc80,cc90,ptx or ptx)")
 
 # ---------------------------------------------------------------------------
 add_executable(umcx umcx.cpp)
@@ -97,8 +97,8 @@ elseif(BACKEND STREQUAL "NVC")
     endif()
     target_compile_options(umcx PRIVATE
         -Minfo=mp,accel -Minline
-        "-gpu=mem:managed,ptxinfo,ccall,${CC_ARCH}" -static-nvidia ${_nvc_ompacc})
-    set(_link_flags "-static-nvidia ${_nvc_ompacc}")
+        "-gpu=mem:managed,${CC_ARCH}" -static-nvidia ${_nvc_ompacc})
+    set(_link_flags "${_nvc_ompacc} -gpu=mem:managed,${CC_ARCH} -static-nvidia")
 
 else()
     message(FATAL_ERROR "Unknown BACKEND '${BACKEND}'. "

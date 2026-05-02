@@ -19,16 +19,11 @@ ifeq ($(OS),Windows_NT)
     endif
 endif
 
-ifneq (,$(filter $(MAKECMDGOALS),nvc))
-    OMPACC=-mp=gpu
-endif
-
-ifneq (,$(filter $(ACC),on))
-    ifneq (,$(filter $(MAKECMDGOALS),nvc))
-        OMPACC=-acc=gpu
-    else
-        OMPACC=-fopenacc
-    endif
+ifeq ($(ACC),on)
+    NVC_GPU_MODE = -acc=gpu
+    OMPACC = -fopenacc
+else
+    NVC_GPU_MODE = -mp=gpu
 endif
 
 GFX      ?= gfx906
@@ -37,7 +32,7 @@ AMDCXX   ?= /opt/rocm/llvm/bin/clang++
 CC_ARCH  ?= cc70,cc80,cc86,cc90,ptx
 
 nvc: CXX=nvc++
-nvc: CXXFLAGS+=-Minfo=mp,accel -Minline -gpu=mem:managed,ptxinfo,ccall,$(CC_ARCH) -static-nvidia
+nvc: CXXFLAGS+=$(NVC_GPU_MODE) -Minfo=mp,accel -Minline -gpu=mem:managed,$(CC_ARCH) -static-nvidia
 amdclang: CXX=$(AMDCXX)
 amdclang: CXXFLAGS+=-target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$(GFX) -fcf-protection=none -fno-stack-protector
 amd: CXXFLAGS+=-foffload=amdgcn-amdhsa="-march=$(GFX)" -foffload="-lm" -fcf-protection=none -fno-stack-protector
@@ -45,7 +40,8 @@ nvidiaclang: CXX=clang++
 nvidiaclang: CXXFLAGS+=-fopenmp-targets=nvptx64 --cuda-gpu-arch=$(SM)
 nvidia: CXXFLAGS+=-foffload=nvptx-none -foffload="-lm" -fcf-protection=none -fno-stack-protector
 nvidiaclang nvidia amd amdclang nvc: CXXFLAGS+=-DGPU_OFFLOAD
-nvidiaclang nvidia amd amdclang nvc: omp
+nvidiaclang nvidia amd amdclang: omp
+nvc: $(OUTPUT_DIR)/$(BINARY)
 
 omp: CXXFLAGS+=$(OMPACC)
 debugmulti multi: omp
