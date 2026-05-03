@@ -115,10 +115,7 @@ struct MCX_volume { // shared, read-only
         dimxyzt = dimxyz * Nt;
         delete [] vol;
         vol = new T[dimxyzt] {};
-
-        for (uint64_t i = 0; i < dimxyzt; i++) {
-            vol[i] = value;
-        }
+        std::fill_n(vol, dimxyzt, value);
     }
     ~MCX_volume () {
         delete [] vol;
@@ -309,15 +306,13 @@ struct MCX_photon { // per thread
     }
     int step(MCX_volume<int>& invol, MCX_medium& prop) {   //< advancing photon one-step through a shape-representing discretized element (voxel)
         float htime[3];
-
         htime[0] = fabsf((ipos.x + (vec.x > 0.f) - pos.x) * rvec.x);  //< time-of-flight to hit the wall in each direction
         htime[1] = fabsf((ipos.y + (vec.y > 0.f) - pos.y) * rvec.y);
         htime[2] = fabsf((ipos.z + (vec.z > 0.f) - pos.z) * rvec.z);
         rvec.w = fminf(fminf(htime[0], htime[1]), htime[2]);            //< get the direction with the smallest time-of-flight
         ipos.w = (rvec.w == htime[0] ? 0 : (rvec.w == htime[1] ? 1 : 2)); //< determine which axis plane the photon crosses
 
-        htime[0] = rvec.w * prop.mus;
-        htime[0] = fminf(htime[0], len.x);
+        htime[0] = fminf(rvec.w * prop.mus, len.x);
         htime[1] = (htime[0] != len.x); // is continue next voxel?
         rvec.w = (prop.mus == 0.f) ? rvec.w : (htime[0] / prop.mus);
         pos = float4(pos.x + rvec.w * vec.x, pos.y + rvec.w * vec.y, pos.z + rvec.w * vec.z, pos.w * expf(-prop.mua * rvec.w));
@@ -327,9 +322,7 @@ struct MCX_photon { // per thread
         len.z += rvec.w;
 
         if (htime[1] > 0.f) { // photon need to move to next voxel
-            (ipos.w == 0) ? (ipos.x += (vec.x > 0.f ? 1 : -1)) :
-            ((ipos.w == 1) ? (ipos.y += (vec.y > 0.f ? 1 : -1)) :
-             (ipos.z += (vec.z > 0.f ? 1 : -1))); // update ipos.xyz based on ipos.w = flipdir
+            (ipos.w == 0) ? (ipos.x += (vec.x > 0.f ? 1 : -1)) : ((ipos.w == 1) ? (ipos.y += (vec.y > 0.f ? 1 : -1)) : (ipos.z += (vec.z > 0.f ? 1 : -1))); // update ipos.xyz based on ipos.w = flipdir
             return invol.index(ipos.x, ipos.y, ipos.z);
         }
 
@@ -347,13 +340,12 @@ struct MCX_photon { // per thread
 
         if (tmax < 0.f || tmin > tmax) {
             return -1.f;
-        } else {
-            pos = float4(pos.x + tmin * vec.x, pos.y + tmin * vec.y, pos.z + tmin * vec.z, 1.f);
-            len = float4(NAN, 0.f, 0.f, pos.w);
-            ipos = short4((short)pos.x, (short)pos.y, (short)pos.z, -1);
-            lastvoxelidx = invol.index(ipos.x, ipos.y, ipos.z, 0);
         }
 
+        pos = float4(pos.x + tmin * vec.x, pos.y + tmin * vec.y, pos.z + tmin * vec.z, 1.f);
+        len = float4(NAN, 0.f, 0.f, pos.w);
+        ipos = short4((short)pos.x, (short)pos.y, (short)pos.z, -1);
+        lastvoxelidx = invol.index(ipos.x, ipos.y, ipos.z, 0);
         return tmin;
     }
     void save(MCX_volume<float>& outvol, int tshift, float mua, const MCX_param& gcfg) {
@@ -362,24 +354,16 @@ struct MCX_photon { // per thread
         len.z = 0.f;
     }
     void scatter(MCX_medium& prop, MCX_rand& ran) {
-        float tmp0;
         len.x = ran.next_scat_len();
-
-        tmp0 = (2.f * FLT_PI) * ran.rand01(); //next arimuth angle
+        float tmp0 = (2.f * FLT_PI) * ran.rand01(); //next arimuth angle
         sincosf(tmp0, &rvec.z, &rvec.w);
 
         if (fabsf(prop.g) > FLT_EPSILON) { //< if prop.g is too small, the distribution of theta is bad
             tmp0 = (1.f - prop.g * prop.g) / (1.f - prop.g + 2.f * prop.g * ran.rand01());
-            tmp0 *= tmp0;
-            tmp0 = (1.f + prop.g * prop.g - tmp0) / (2.f * prop.g);
-            tmp0 = fmaxf(-1.f, fminf(1.f, tmp0));
-
-            rvec.x = acosf(tmp0);
-            rvec.x = sinf(rvec.x);
-            rvec.y = tmp0;
+            tmp0 = (1.f + prop.g * prop.g - tmp0 * tmp0) / (2.f * prop.g);
+            sincosf(acosf(fmaxf(-1.f, fminf(1.f, tmp0))), &rvec.x, &rvec.y);
         } else {
-            tmp0 = acosf(2.f * ran.rand01() - 1.f);
-            sincosf(tmp0, &rvec.x, &rvec.y);
+            sincosf(acosf(2.f * ran.rand01() - 1.f), &rvec.x, &rvec.y);
         }
 
         rotatevector(rvec.x, rvec.y, rvec.z, rvec.w);
@@ -388,19 +372,16 @@ struct MCX_photon { // per thread
     }
     float reflectcoeff(float n1, float n2) {
         float Icos = fabsf((ipos.w == 0) ? vec.x : (ipos.w == 1 ? vec.y : vec.z));
-        float tmp0 = n1 * n1;
-        float tmp1 = n2 * n2;
+        float tmp0 = n1 * n1, tmp1 = n2 * n2;
         float tmp2 = 1.f - tmp0 / tmp1 * (1.f - Icos * Icos); /** 1-[n1/n2*sin(si)]^2 = cos(ti)^2*/
 
         if (tmp2 > 0.f) { //< partial reflection
-            float Re, Im, Rtotal;
-            Re = tmp0 * Icos * Icos + tmp1 * tmp2;
+            float Re = tmp0 * Icos * Icos + tmp1 * tmp2;
             tmp2 = sqrtf(tmp2); /** to save one sqrt*/
-            Im = 2.f * n1 * n2 * Icos * tmp2;
-            Rtotal = (Re - Im) / (Re + Im); /** Rp*/
+            float Im = 2.f * n1 * n2 * Icos * tmp2;
+            float Rtotal = (Re - Im) / (Re + Im); /** Rp*/
             Re = tmp1 * Icos * Icos + tmp0 * tmp2 * tmp2;
-            Rtotal = (Rtotal + (Re - Im) / (Re + Im)) * 0.5f; /** (Rp+Rs)/2*/
-            return Rtotal;
+            return (Rtotal + (Re - Im) / (Re + Im)) * 0.5f; /** (Rp+Rs)/2*/
         }
 
         return 1.f;  //< total reflection
@@ -419,21 +400,17 @@ struct MCX_photon { // per thread
         if (Rtotal < 1.f && ran.rand01() > Rtotal) {
             transmit(n1, n2);
             return 1;
-        } else {
-            (ipos.w == 0) ? REFLECT_PHOTON(x) : ((ipos.w == 1) ? REFLECT_PHOTON(y) : REFLECT_PHOTON(z));
-            newvoxelid = lastvoxelidx;
-            newmediaid = mediaid;
-            return 0;
         }
+
+        (ipos.w == 0) ? REFLECT_PHOTON(x) : ((ipos.w == 1) ? REFLECT_PHOTON(y) : REFLECT_PHOTON(z));
+        newvoxelid = lastvoxelidx;
+        newmediaid = mediaid;
+        return 0;
     }
     void rotatevector(float stheta, float ctheta, float sphi, float cphi) {
         if ( vec.z > -1.f + FLT_EPSILON && vec.z < 1.f - FLT_EPSILON ) {
-            float tmp0 = 1.f - vec.z * vec.z;
-            float tmp1 = stheta / sqrtf(tmp0);
-            vec = float4(tmp1 * (vec.x * vec.z * cphi - vec.y * sphi) + vec.x * ctheta,
-                         tmp1 * (vec.y * vec.z * cphi + vec.x * sphi) + vec.y * ctheta,
-                         -tmp1 * tmp0 * cphi                          + vec.z * ctheta,
-                         vec.w);
+            float tmp0 = 1.f - vec.z * vec.z, tmp1 = stheta / sqrtf(tmp0);
+            vec = float4(tmp1 * (vec.x * vec.z * cphi - vec.y * sphi) + vec.x * ctheta, tmp1 * (vec.y * vec.z * cphi + vec.x * sphi) + vec.y * ctheta, -tmp1 * tmp0 * cphi + vec.z * ctheta, vec.w);
         } else {
             vec = float4(stheta * cphi, stheta * sphi, (vec.z > 0.f) ? ctheta : -ctheta, vec.w);
         }
@@ -443,8 +420,7 @@ struct MCX_photon { // per thread
     }
     void savedetector(const float4 detpos[], MCX_detect& detdata, float detphotonbuffer[], const MCX_param& gcfg) {
         for (int i = 0; i < gcfg.detnum; i++) {
-            if ((detpos[i].x - pos.x) * (detpos[i].x - pos.x) + (detpos[i].y - pos.y) * (detpos[i].y - pos.y) +
-                    (detpos[i].z - pos.z) * (detpos[i].z - pos.z) < detpos[i].w * detpos[i].w) {
+            if ((detpos[i].x - pos.x) * (detpos[i].x - pos.x) + (detpos[i].y - pos.y) * (detpos[i].y - pos.y) + (detpos[i].z - pos.z) * (detpos[i].z - pos.z) < detpos[i].w * detpos[i].w) {
                 detdata.addphoton(i + 1, pos, vec, detphotonbuffer, gcfg);
             }
         }
@@ -460,8 +436,7 @@ struct MCX_clock {
     std::chrono::system_clock::time_point starttime;
     MCX_clock() : starttime(std::chrono::system_clock::now()) {}
     double elapse() {
-        std::chrono::duration<double> elapsetime = (std::chrono::system_clock::now() - starttime);
-        return elapsetime.count() * 1000.;
+        return std::chrono::duration<double>(std::chrono::system_clock::now() - starttime).count() * 1000.;
     }
 };
 /// MCX_userio parses user JSON input and saves output to binary JSON files
@@ -493,9 +468,7 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
         std::vector<std::string> params(argv + 1, argv + argc);
 
         if (params[0].find("-") == 0) {  // format 1: umcx -flag1 jsonvalue1 -flag2 jsonvalue2 --longflag3 jsonvalue3 ....
-            int i = 1;
-
-            while (i < argc) {
+            for (int i = 1; i < argc; ) {
                 std::string arg(argv[i++]);
 
                 if ((arg == "-f" || arg == "--input") && i < argc) {
@@ -527,12 +500,10 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
                     throw std::runtime_error(std::string("incomplete input parameter: ") + arg + "; every -flag/--flag must be followed by a valid value");
                 }
             }
+        } else if (argc == 2) {
+            (params[0].find(".") == std::string::npos) ? benchmark(params[0]) : loadfromfile(params[0]);
         } else {
-            if (argc == 2) {
-                (params[0].find(".") == std::string::npos) ? benchmark(params[0]) : loadfromfile(params[0]);
-            } else {
-                throw std::runtime_error("must use -flag or --flag to use than 1 input");
-            }
+            throw std::runtime_error("must use -flag or --flag to use than 1 input");
         }
 
         initdomain();
@@ -546,10 +517,7 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
         }
     }
     void printhelp() {
-        std::cout << "/uMCX/ - Portable, massively-parallel physical volumetric ray-tracer\nCopyright (c) 2024-2025 Qianqian Fang <q.fang@neu.edu>\thttps://mcx.space\n\nFormat:\n\tumcx -flag1 value1 -flag2 value2 ...\n\t\tor\n\tumcx inputjson.json\n\tumcx benchmarkname\n" << std::endl;
-        std::cout << "Flags:\n\t-f/--input\tinput json file\n\t-Q/--bench\t\tbenchmark name\n\t-n/--photon\tphoton number [1e6]\n\t-s/--session\toutput name\n\t-u/--unitinmm\tvoxel size in mm [1]\n\t-E/--seed\tRNG seed [1648335518]\n\t-O/--outputtype\t[x]: fluence-rate, f: fluence, e: energy" << std::endl;
-        std::cout << "\t-d/--savedet\tSave detected photons [1]\n\t-S/--save2pt\tSave volumetric output [1]\n\t-w/--savedetflag\t1:detector-id, 4:partial-path, 16:exit-pos, 32:exit-dir, add to combine [5]\n\t-U/--normalize\tnormalize output [1]" << std::endl;
-        std::cout << "\t-j/--json\tJSON string to overwrite settings\n\t-t/--thread\tmanual total threads\n\t-T/--blocksize\tmanual thread-block size [64]\n\t-G/--gpuid\tdevice ID [1]\n\t--dumpjson\tdump settings as json\n\t--dumpmask\tdump domain as binary json\n\t-h/--help\tprint help\n\t-N/--net\tbrowse or download simulations from NeuroJSON.io\n\nBuilt-in benchmarks: " << MCX_benchmarks.dump(8) << std::endl;
+        std::cout << "/uMCX/ - Portable, massively-parallel physical volumetric ray-tracer\nCopyright (c) 2024-2025 Qianqian Fang <q.fang@neu.edu>\thttps://mcx.space\n\nFormat:\n\tumcx -flag1 value1 -flag2 value2 ...\n\t\tor\n\tumcx inputjson.json\n\tumcx benchmarkname\n\nFlags:\n\t-f/--input\tinput json file\n\t-Q/--bench\t\tbenchmark name\n\t-n/--photon\tphoton number [1e6]\n\t-s/--session\toutput name\n\t-u/--unitinmm\tvoxel size in mm [1]\n\t-E/--seed\tRNG seed [1648335518]\n\t-O/--outputtype\t[x]: fluence-rate, f: fluence, e: energy\n\t-d/--savedet\tSave detected photons [1]\n\t-S/--save2pt\tSave volumetric output [1]\n\t-w/--savedetflag\t1:detector-id, 4:partial-path, 16:exit-pos, 32:exit-dir, add to combine [5]\n\t-U/--normalize\tnormalize output [1]\n\t-j/--json\tJSON string to overwrite settings\n\t-t/--thread\tmanual total threads\n\t-T/--blocksize\tmanual thread-block size [64]\n\t-G/--gpuid\tdevice ID [1]\n\t--dumpjson\tdump settings as json\n\t--dumpmask\tdump domain as binary json\n\t-h/--help\tprint help\n\t-N/--net\tbrowse or download simulations from NeuroJSON.io\n\nBuilt-in benchmarks: " << MCX_benchmarks.dump(8) << std::endl;
         std::exit(0);
     }
     void initdomain() {
@@ -662,8 +630,7 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
         }
     }
     void loadfromfile(std::string finput) {
-        std::ifstream inputjson(finput);
-        inputjson >> cfg;
+        cfg = json::parse(std::ifstream(finput));
     }
     template<class T>
     void savevolume(MCX_volume<T>& outputvol, float normalizer = 1.f, std::string outputfile = "") {
@@ -794,12 +761,8 @@ int MCX_run_simulation(char* argv[], int argn = 1) {
     float4* detpos = new float4[gcfg.detnum];
 
     for (int i = 0; i < gcfg.mediumnum; i++) {
-        if (io.cfg["Domain"]["Media"][i].is_array()) {
-            srcparam1 = io.cfg["Domain"]["Media"][i].get<std::vector<float>>();
-            prop[i] = MCX_medium(srcparam1[0], srcparam1[1], srcparam1[2], srcparam1[3]);
-        } else {
-            prop[i] = MCX_medium(JNUM(io.cfg["Domain"]["Media"], i, "mua") * gcfg.unitinmm, JNUM(io.cfg["Domain"]["Media"], i, "mus") * gcfg.unitinmm, io.cfg["Domain"]["Media"][i]["g"], io.cfg["Domain"]["Media"][i]["n"]);
-        }
+        srcparam1 = io.cfg["Domain"]["Media"][i].is_array() ? io.cfg["Domain"]["Media"][i].get<std::vector<float>>() : std::vector<float> {JNUM(io.cfg["Domain"]["Media"], i, "mua")* gcfg.unitinmm, JNUM(io.cfg["Domain"]["Media"], i, "mus")* gcfg.unitinmm, io.cfg["Domain"]["Media"][i]["g"], io.cfg["Domain"]["Media"][i]["n"]};
+        prop[i] = MCX_medium(srcparam1[0], srcparam1[1], srcparam1[2], srcparam1[3]);
     }
 
     for (int i = 0; i < gcfg.detnum; i++) {
@@ -807,14 +770,12 @@ int MCX_run_simulation(char* argv[], int argn = 1) {
     }
 
     MCX_clock timer;
-    double energyescape = 0.0;
     const uint64_t nphoton = io.cfg["Session"]["Photons"].get<uint64_t>();
     int templateid = (gcfg.isreflect * 10 + gcfg.issavedet);
-
-    (templateid == 00) ? (energyescape = MCX_kernel<false, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata)) :
-    ((templateid == 01) ? (energyescape = MCX_kernel<false, true>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata)) :
-     ((templateid == 10) ? (energyescape = MCX_kernel<true, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata)) :
-      /*templateid == 11*/  (energyescape = MCX_kernel<true, true>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata))));
+    double energyescape = (templateid == 00) ? MCX_kernel<false, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
+                          (templateid == 01) ? MCX_kernel<false, true>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
+                          (templateid == 10) ? MCX_kernel<true, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
+                          /*templateid == 11*/ MCX_kernel<true, true>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata);
 
     float normalizer = (gcfg.outputtype == otEnergy) ? (1.f / nphoton) : ((gcfg.outputtype == otFluenceRate) ? gcfg.rtstep / (nphoton * gcfg.unitinmm * gcfg.unitinmm) : 1.f / (nphoton * gcfg.unitinmm * gcfg.unitinmm));
     printf("simulated energy %.2f, speed %.2f photon/ms, duration %.6f ms, normalizer %.6f, detected %d, absorbed %.6f%%\n", (double)nphoton, nphoton / timer.elapse(), timer.elapse(), normalizer, detdata.savedcount(), (nphoton - energyescape) / nphoton * 100.);
