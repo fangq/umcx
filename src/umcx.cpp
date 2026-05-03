@@ -169,10 +169,9 @@ struct MCX_detect { // shared, read-only
             copydata(baseaddr, &vec.x, ((gcfg.savedetflag & dpExitDir) > 0) * 3);
         }
     }
-    void copydata(uint32_t& startpos, float* buf, const int& len) {
-        for (int i = 0; i < len; i++) {
-            detphotondata[startpos++] = buf[i];
-        }
+    void copydata(uint32_t& startpos, float* buf, int len) {
+        std::copy_n(buf, len, detphotondata + startpos);
+        startpos += len;
     }
     uint32_t savedcount() {
         return (detectedphoton > maxdetphotons ? maxdetphotons : detectedphoton);
