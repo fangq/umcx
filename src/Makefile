@@ -5,7 +5,7 @@ DOC_DIR=$(MCXDIR)/doc
 MKDIR = mkdir
 DOXYGEN = doxygen
 
-CXXFLAGS += -g -Wall -Wextra -pedantic -std=c++11 -O3
+CXXFLAGS += -g -Wall -Wextra -pedantic -std=c++20 -O3
 BINARY = umcx
 SRC = umcx.cpp
 DOCCFG = umcxdoc.cfg
