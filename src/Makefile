@@ -26,6 +26,20 @@ else
     NVC_GPU_MODE = -mp=gpu
 endif
 
+MEX_BIN        ?= mex
+MEXOUTDIR       = $(MCXDIR)/umcxlab
+MEXBASEFLAGS    = $$CXXFLAGS
+MEXBASELDFLAGS  = $$LDFLAGS
+MEXDIRECT       =
+MATLAB_ROOT    ?= $(patsubst %/bin/mex,%,$(realpath $(shell which $(MEX_BIN) 2>/dev/null)))
+MEXEXT         ?= mexa64
+MEXLNK          = $(MEX_BIN) CXX='$(CXX)' CXXFLAGS='$(MEXBASEFLAGS) $(CXXFLAGS) $(USERCXXFLAGS)' LDFLAGS='$(MEXBASELDFLAGS) $(CXXFLAGS)' $(SRC) -outdir $(OUTPUT_DIR)
+MEXDIRLNK       = $(CXX) $(CXXFLAGS) $(USERCXXFLAGS) -shared -fPIC -DMATLAB_MEX_FILE -I$(MATLAB_ROOT)/extern/include -o $(OUTPUT_DIR)/$(BINARY).$(MEXEXT) $(SRC)
+
+ifeq ($(MEX),1)
+    OUTPUT_DIR = $(MEXOUTDIR)
+endif
+
 GFX      ?= gfx906
 SM       ?= sm_50
 AMDCXX   ?= /opt/rocm/llvm/bin/clang++
@@ -33,6 +47,9 @@ CC_ARCH  ?= cc70,cc80,cc86,cc90,ptx
 
 nvc: CXX=nvc++
 nvc: CXXFLAGS+=$(NVC_GPU_MODE) -Minfo=mp,accel -Minline -gpu=mem:managed,$(CC_ARCH) -static-nvidia
+nvc: MEXBASEFLAGS =
+nvc: MEXBASELDFLAGS =
+nvc: MEXDIRECT = 1
 amdclang: CXX=$(AMDCXX)
 amdclang: CXXFLAGS+=-target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$(GFX) -fcf-protection=none -fno-stack-protector
 amd: CXXFLAGS+=-foffload=amdgcn-amdhsa="-march=$(GFX)" -foffload="-lm" -fcf-protection=none -fno-stack-protector -no-pie
@@ -51,11 +68,23 @@ debugsingle debugmulti multi single omp: $(OUTPUT_DIR)/$(BINARY)
 
 all: multi
 
+makemexdir:
+	@if test ! -d $(MEXOUTDIR); then $(MKDIR) $(MEXOUTDIR); fi
+
+mex: OUTPUT_DIR = $(MEXOUTDIR)
+mex: CXXFLAGS+=-fopenmp -foffload=disable
+mex: makemexdir
+	$(MEXLNK)
+
 makedirs:
 	@if test ! -d $(OUTPUT_DIR); then $(MKDIR) $(OUTPUT_DIR); fi
 
-$(OUTPUT_DIR)/$(BINARY): makedirs $(OBJS)
+$(OUTPUT_DIR)/$(BINARY): makedirs $(if $(filter 1,$(MEX)),,$(OBJS))
+ifeq ($(MEX),1)
+	$(if $(MEXDIRECT),$(MEXDIRLNK),$(MEXLNK))
+else
 	$(CXX)  $(CXXFLAGS) -o $(OUTPUT_DIR)/$(BINARY) $(OBJS) $(USERLINKFLAGS)
+endif
 
 %.o: %.c
 	$(CC)  $(CFLAGS) -c $< -o $@
@@ -70,7 +99,7 @@ doc: makedocdir
 	$(DOXYGEN) $(DOCCFG)
 
 clean:
-	rm -rf $(OUTPUT_DIR)/$(BINARY) *.o $(DOC_DIR)/*
+	rm -rf $(OUTPUT_DIR)/$(BINARY) *.o $(DOC_DIR)/* $(MEXOUTDIR)/$(BINARY).mex*
 
 # derived the astyle settings from https://github.com/nlohmann/json
 pretty:
@@ -97,3 +126,6 @@ pretty:
 	   "*.cpp"
 
 .DEFAULT_GOAL=all
+ifeq ($(MEX),1)
+    .DEFAULT_GOAL=mex
+endif

@@ -20,6 +20,9 @@
 #include <set>
 #include <map>
 #include "nlohmann/json.hpp"
+#ifdef MATLAB_MEX_FILE /// MATLAB binding
+    #include "mex.h"
+#endif
 
 #define ONE_OVER_C0          3.335640951981520e-12f
 #define FLT_PI               3.1415926535897932385f
@@ -740,7 +743,7 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
     return energyescape;
 }
 /// Main MCX simulation function, parsing user inputs via string arrays in argv[argn], can be called repeatedly
-int MCX_run_simulation(char* argv[], int argn = 1) {
+int MCX_run_simulation(char* argv[], int argn = 1, int nlhs = 0, void* plhs[] = NULL) {
     MCX_userio io(argv, argn);
     std::vector<float> srcparam1 = io.cfg["Optode"]["Source"].value("Param1", std::vector<float> {0.f, 0.f, 0.f, 0.f});
     std::vector<float> srcparam2 = io.cfg["Optode"]["Source"].value("Param2", std::vector<float> {0.f, 0.f, 0.f, 0.f});
@@ -776,12 +779,30 @@ int MCX_run_simulation(char* argv[], int argn = 1) {
                           (templateid == 01) ? MCX_kernel<false, true>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
                           (templateid == 10) ? MCX_kernel<true, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
                           /*templateid == 11*/ MCX_kernel<true, true>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata);
-
     float normalizer = (gcfg.outputtype == otEnergy) ? (1.f / nphoton) : ((gcfg.outputtype == otFluenceRate) ? gcfg.rtstep / (nphoton * gcfg.unitinmm * gcfg.unitinmm) : 1.f / (nphoton * gcfg.unitinmm * gcfg.unitinmm));
-    printf("simulated energy %.2f, speed %.2f photon/ms, duration %.6f ms, normalizer %.6f, detected %d, absorbed %.6f%%\n", (double)nphoton, nphoton / timer.elapse(), timer.elapse(), normalizer, detdata.savedcount(), (nphoton - energyescape) / nphoton * 100.);
 
-    (gcfg.issavevol) ? io.savevolume<float>(outputvol, gcfg.isnormalized ? normalizer : 1.f) : PASS;
+#ifdef MATLAB_MEX_FILE
+    mexPrintf("simulated energy %.2f, speed %.2f photon/ms, duration %.6f ms, normalizer %.6f, detected %d, absorbed %.6f%%\n", (double)nphoton, nphoton / timer.elapse(), timer.elapse(), normalizer, detdata.savedcount(), (nphoton - energyescape) / nphoton * 100.);
+
+    if (nlhs >= 1) {
+        const char* fieldnames[] = {"data"};
+        mwSize vsize[] = {outputvol.size.x, outputvol.size.y, outputvol.size.z, outputvol.size.w}, dsize[] = {detdata.savedcount(), (mwSize)detdata.detphotondatalen};
+        plhs[0] = (void*)mxCreateStructMatrix(1, 1, 1, fieldnames);
+        mxSetFieldByNumber((mxArray*)plhs[0], 0, 0, mxCreateNumericArray((outputvol.size.w > 1) ? 4 : 3, vsize, mxSINGLE_CLASS, mxREAL));
+        memcpy((float*)mxGetData(mxGetField((mxArray*)plhs[0], 0, "data")), outputvol.vol, outputvol.dimxyzt * sizeof(float));
+
+        if (nlhs > 1) {
+            plhs[1] = (void*)mxCreateStructMatrix(1, 1, 1, fieldnames);
+            mxSetFieldByNumber((mxArray*)plhs[1], 0, 0, mxCreateNumericArray(2, dsize, mxSINGLE_CLASS, mxREAL));
+            memcpy((float*)mxGetData(mxGetField((mxArray*)plhs[1], 0, "data")), detdata.detphotondata, (dsize[0] * dsize[1]) * sizeof(float));
+        }
+    }
+
+#else
+    printf("simulated energy %.2f, speed %.2f photon/ms, duration %.6f ms, normalizer %.6f, detected %d, absorbed %.6f%%\n", (double)nphoton, nphoton / timer.elapse(), timer.elapse(), normalizer, detdata.savedcount(), (nphoton - energyescape) / nphoton * 100.);
+    (gcfg.issavevol) ? io.savevolume<float>(outputvol, gcfg.isnormalized ? normalizer : 1.f) : (void)(nlhs | (plhs != NULL));
     (gcfg.issavedet) ? io.savedetphoton(detdata, gcfg)                                       : PASS;
+#endif
 
     delete [] prop;
     delete [] detpos;
@@ -795,6 +816,14 @@ extern "C" int MCX_run_json(char* jsoninput) {
     char* cmdflags[] = {(char*)"", (char*)"--json", jsoninput};
     return MCX_run_simulation(cmdflags, sizeof(cmdflags) / sizeof(cmdflags[0]));
 }
+#ifdef MATLAB_MEX_FILE /// MATLAB binding - input is a JSON string, output are structs: flux.data and detp.data
+void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
+    if (nrhs >= 1 && nlhs >= 1) {
+        char* cmdflags[] = {(char*)"", (char*)"--json", mxArrayToString(prhs[0])};
+        MCX_run_simulation(cmdflags, sizeof(cmdflags) / sizeof(cmdflags[0]), nlhs, (void**)plhs);
+    }
+}
+#endif
 /////////////////////////////////////////////////
 /// \brief main function
 /////////////////////////////////////////////////
