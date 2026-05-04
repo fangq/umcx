@@ -467,6 +467,12 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
         }
     };
     MCX_userio(char* argv[], int argc = 1) {   // parsing command line, argc must be greater than 1
+        if (argc < 0) {
+            cfg = json::from_bjdata(std::vector<char>(argv[0], argv[0] - argc));
+            initdomain();
+            return;
+        }
+
         (argc == 1) ? printhelp() : PASS;
         std::vector<std::string> params(argv + 1, argv + argc);
 
@@ -506,7 +512,7 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
         } else if (argc == 2) {
             (params[0].find(".") == std::string::npos) ? benchmark(params[0]) : loadfromfile(params[0]);
         } else {
-            throw std::runtime_error("must use -flag or --flag to use than 1 input");
+            throw std::runtime_error("must use -flag or --flag to use more than 1 input");
         }
 
         initdomain();
@@ -560,6 +566,11 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
                     }
             } else {
                 domain.reshape(cfg["Shapes"]["_ArraySize_"][0], cfg["Shapes"]["_ArraySize_"][1], cfg["Shapes"]["_ArraySize_"][2]);
+
+                if (cfg["Shapes"].contains("_ArrayData_")) {
+                    const auto data = cfg["Shapes"]["_ArrayData_"].get<std::vector<int>>();
+                    memcpy(domain.vol, data.data(), domain.dimxyz * sizeof(int));
+                }
             }
         }
 
@@ -819,8 +830,8 @@ extern "C" int MCX_run_json(char* jsoninput) {
 #ifdef MATLAB_MEX_FILE /// MATLAB binding - input is a JSON string, output are structs: flux.data and detp.data
 void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     if (nrhs >= 1 && nlhs >= 1) {
-        char* cmdflags[] = {(char*)"", (char*)"--json", mxArrayToString(prhs[0])};
-        MCX_run_simulation(cmdflags, sizeof(cmdflags) / sizeof(cmdflags[0]), nlhs, (void**)plhs);
+        char* cmdflags[] = {(char*)mxGetData(prhs[0])};
+        MCX_run_simulation(cmdflags, -(int)mxGetNumberOfElements(prhs[0]), nlhs, (void**)plhs);
     }
 }
 #endif

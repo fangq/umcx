@@ -4,6 +4,5 @@ function varargout = umcxlab(cfg)
 % example:
 %   [flux, detp] = umcxlab(mcxcreate('cube60'))
 
-jsonfile = [tempname, '.json'];
-mcx2json(cfg, jsonfile);
-[varargout{1:nargout}] = umcx(fileread(jsonfile));
+bjdata = uint8(mcx2json(cfg, '.jdb', 'compression', ''));
+[varargout{1:nargout}] = umcx(bjdata);
