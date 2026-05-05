@@ -1288,6 +1288,8 @@ unsigned char* base64_decode(const unsigned char* src, size_t len,
 #endif
 
 /* ======== miniz.c ======== */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtype-limits"
 /**************************************************************************
  *
  * Copyright 2013-2014 RAD Game Tools and Valve Software
@@ -4481,6 +4483,7 @@ void tinfl_decompressor_free(tinfl_decompressor* pDecomp) {
 **************************************************************************/
 
 
+#pragma GCC diagnostic pop
 
 /* ======== end miniz.c ======== */
 
@@ -5768,7 +5771,7 @@ unsigned char* base64_decode(const unsigned char* src, size_t len,
         dtable[base64_table[i]] = (unsigned char) i;
     }
 
-    dtable['='] = 0;
+    dtable[(unsigned char)'='] = 0;
 
     count = 0;
 
