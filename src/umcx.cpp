@@ -1,10 +1,10 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////
 ///  \mainpage uMCX: readable, portable, hackable and massively-parallel photon simulator
-///  \copyright Qianqian Fang <q.fang at neu.edu>, 2024-2025
+///  \copyright Qianqian Fang <q.fang at neu.edu>, 2024-2026
 ///  \section sRationale Project Rationale
 ///       \li Must be readable, write clean C++11 code as short as possible without obscurity
 ///       \li Must be highly portable, support as many CPUs/GPUs and C++11 compilers as possible
-///       \li Must use human-understandable user input/output, centered around JSON/binary JSON
+///       \li Must use human-understandable JSON/binary JSON input/output formats compatible with MCX
 ///       \li Avoid using fancy C++ classes inside omp target region as OpenMP support is limited
 ///  \section sFormat Code Formatting
 //        Please always run "make pretty" inside \c src before each commit, needing \c astyle

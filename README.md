@@ -1,8 +1,9 @@
-# umcx - Shortest GPU-accelerated 3D Monte Carlo photon simulator
+# umcx - GPU-accelerated 3D Monte Carlo photon simulator in less than 1000 lines
 
-* Copyright (C) 2025-2026  Qianqian Fang <q.fang at neu.edu>
-* License: GNU General Public License version 3 (GPL v3), see License*.txt
-* Version: 0.5
+* Copyright (C) 2024-2026  Qianqian Fang <q.fang at neu.edu>
+* License: GNU General Public License version 3 (GPL v3), see LICENSE.txt
+* Version: 0.5 （Boxer Crab)
+* Website: https://mcx.space/umcx
 * Github: https://github.com/fangq/umcx
 * Acknowledgement: This project is part of the [MCX project](https://mcx.space)
   supported by US National Institute of Health (NIH)
@@ -19,16 +20,17 @@
 2. [Features](#features)
 3. [Comparison with MCX](#comparison-with-mcx)
 4. [How to compile umcx](#how-to-compile-umcx)
-5. [Hardware support status](#hardware-support-status)
-6. [How to use umcx](#how-to-use-umcx)
-7. [Command-line flags](#command-line-flags)
-8. [Input file format](#input-file-format)
-9. [Output file format](#output-file-format)
-10. [Source types](#source-types)
-11. [Built-in benchmarks](#built-in-benchmarks)
-12. [How to run built-in tests](#how-to-run-built-in-tests)
-13. [How to build documentation](#how-to-build-documentation)
-14. [Acknowledgement](#acknowledgement)
+5. [MATLAB MEX binding (umcxlab)](#matlab-mex-binding-umcxlab)
+6. [Hardware support status](#hardware-support-status)
+7. [How to use umcx](#how-to-use-umcx)
+8. [Command-line flags](#command-line-flags)
+9. [Input file format](#input-file-format)
+10. [Output file format](#output-file-format)
+11. [Source types](#source-types)
+12. [Built-in benchmarks](#built-in-benchmarks)
+13. [How to run built-in tests](#how-to-run-built-in-tests)
+14. [How to build documentation](#how-to-build-documentation)
+15. [Acknowledgement](#acknowledgement)
 
 ---
 
@@ -143,7 +145,7 @@ minimize code length, **—** = not implemented
 | User-defined launch distribution | ✔ | t |
 | User-defined scattering phase function | ✔ | t |
 | Boundary conditions (`-B`) | ✔ | — |
-| MATLAB/Python language bindings | ✔ | t |
+| MATLAB language binding | ✔ | ✔ |
 
 ---
 
@@ -212,8 +214,13 @@ export PATH=/opt/nvidia/hpc_sdk/Linux_x86_64/<version>/compilers/bin:$PATH
 | `make amdclang` | `clang++` | AMD (gfx906) | Clang amdgcn offloading |
 | `make debugsingle` | `g++` | None | Single-core debug build |
 | `make debugmulti` | `g++` | None | Multi-core debug build |
+| `make mex` | `g++` | None | MATLAB MEX file (CPU/OpenMP), output in `umcxlab/` |
+| `make nvc MEX=1` | `nvc++` | NVIDIA | MATLAB MEX file (NVIDIA GPU via OpenMP) |
+| `make nvidia MEX=1` | `g++` | NVIDIA | MATLAB MEX file (NVIDIA GPU, GCC nvptx) |
+| `make nvidiaclang MEX=1` | `clang++` | NVIDIA | MATLAB MEX file (NVIDIA GPU, Clang) |
+| `make amdclang MEX=1` | `clang++` | AMD | MATLAB MEX file (AMD GPU) |
 | `make doc` | doxygen | — | Generate HTML/LaTeX documentation |
-| `make clean` | — | — | Remove binary, objects, and doc output |
+| `make clean` | — | — | Remove binary, objects, doc output, and `umcxlab/umcx.mex*` |
 | `make pretty` | astyle | — | Auto-format source code |
 
 The compiled binary is placed in `../bin/umcx`.
@@ -256,6 +263,7 @@ The binary is placed in `../bin/umcx`, matching the Makefile output location.
 | `BACKEND` | `OMP` | Backend: `OMP` `SINGLE` `NVIDIA` `NVIDIA_CLANG` `AMD` `AMD_CLANG` `NVC` |
 | `ACC` | `OFF` | Use OpenACC instead of OpenMP for the `NVC` backend |
 | `DEBUG` | `OFF` | Enable `DEBUG` preprocessor define |
+| `BUILD_MEX` | `OFF` | Build MATLAB MEX binding; output to `umcxlab/umcx.<mexext>` |
 | `CUDA_PATH` | *(empty)* | CUDA installation path for `NVIDIA_CLANG` backend |
 | `CC_ARCH` | `cc70,cc80,cc86,cc90,ptx` | nvc++ GPU targets; `ptx` embeds PTX for JIT-based forward compatibility with future GPUs |
 
@@ -287,6 +295,13 @@ cmake -B ../build -DBACKEND=AMD && cmake --build ../build
 # AMD GPU via Clang (equivalent to make amdclang)
 cmake -B ../build -DCMAKE_CXX_COMPILER=clang++ -DBACKEND=AMD_CLANG
 cmake --build ../build
+
+# MATLAB MEX file, CPU/OpenMP (equivalent to make mex)
+cmake -B ../build -DBUILD_MEX=ON && cmake --build ../build --target umcxlab
+
+# MATLAB MEX file, NVIDIA GPU via nvc++ (equivalent to make nvc MEX=1)
+cmake -B ../build -DCMAKE_CXX_COMPILER=nvc++ -DBACKEND=NVC -DBUILD_MEX=ON
+cmake --build ../build --target umcxlab
 ```
 
 ### Code formatting
@@ -303,6 +318,97 @@ This requires `astyle` to be installed:
 ```bash
 sudo apt-get install astyle
 ```
+
+---
+
+## MATLAB MEX binding (umcxlab)
+
+umcx includes a MATLAB MEX binding that exposes the simulation engine as a
+native MATLAB function. The binding lives in `umcxlab/` and is largely
+compatible with [MCXLab](https://mcx.space/wiki/index.cgi?Doc/mcxlab), but
+limited to the options supported by umcx.
+
+### Building the MEX file
+
+MATLAB must be installed and `mex` must be on `PATH` (or set `MEX_BIN`).
+
+**CPU / OpenMP (recommended for most users):**
+```bash
+cd src
+make mex
+```
+
+**NVIDIA GPU (nvc++, best performance):**
+```bash
+make nvc MEX=1
+```
+
+**NVIDIA GPU (GCC nvptx or Clang):**
+```bash
+make nvidia MEX=1        # GCC nvptx offloading
+make nvidiaclang MEX=1   # Clang nvptx64 offloading
+```
+
+**AMD GPU (ROCm clang++):**
+```bash
+make amdclang MEX=1
+```
+
+The `MEX=1` flag can be appended to any GPU build target. The compiled file
+is placed in `umcxlab/umcx.mexa64` (Linux), `umcx.mexmaci64` (macOS), or
+`umcx.mexw64` (Windows). `make clean` also removes `umcxlab/umcx.mex*`.
+
+### Usage
+
+Add `umcxlab/` to your MATLAB path and call `umcxlab` with an MCX-compatible
+configuration struct:
+
+```matlab
+addpath('/path/to/umcx/umcxlab');
+
+cfg.nphoton  = 1e6;
+cfg.vol      = ones(60, 60, 60, 'uint8');
+cfg.srcpos   = [30 30 1];
+cfg.srcdir   = [0 0 1];
+cfg.prop     = [0 0 1 1; 0.005 1 0.01 1.37];
+cfg.tstart   = 0;
+cfg.tend     = 5e-9;
+cfg.tstep    = 5e-9;
+
+[flux, detp] = umcxlab(cfg);
+```
+
+Or using a built-in benchmark via `mcxcreate` (from MCXLab):
+```matlab
+[flux, detp] = umcxlab(mcxcreate('cube60'));
+```
+
+`umcxlab` serializes `cfg` to BJData format via `mcx2json`, passes the binary
+blob to the `umcx` MEX entry point, and returns:
+
+- `flux.data` — 3D or 4D `single` array of fluence-rate (or fluence/energy,
+  per `cfg.outputtype`), shape `[Nx, Ny, Nz, Nt]`
+- `detp.data` — 2D `single` array of detected-photon records,
+  shape `[ndetected × ncolumns]`
+
+### Compatibility with MCXLab
+
+`umcxlab` accepts the same configuration struct format as `mcxlab`. Fields not
+supported by umcx are silently ignored by `mcx2json`. The table below
+summarizes the main differences:
+
+| Feature | mcxlab | umcxlab |
+|---------|:------:|:-------:|
+| GPU acceleration | ✔ | ✔ (compile-time choice) |
+| Multiple output types (`outputtype`) | ✔ | ✔ |
+| Boundary reflection (`DoMismatch`) | ✔ | ✔ |
+| Detected photon output (`detp`) | ✔ | ✔ |
+| Source types | 15 | 5 (pencil/isotropic/cone/disk/planar) |
+| Multi-GPU | ✔ | — |
+| Photon replay | ✔ | — |
+| Polarized light | ✔ | — |
+| Continuous medium (`mediabyte`) | ✔ | — |
+| Python binding (pmcx) | ✔ | — |
 
 ---
 
@@ -968,9 +1074,8 @@ See `LICENSE.txt` for the full license text.
 
 If you use umcx in a publication, please cite the MCX project:
 
-> Fang Q, Boas DA. Monte Carlo simulation of photon migration in 3D turbid media
-> accelerated by graphics processing units. *Opt Express.* 2009;17(22):20178-90.
-> doi:10.1364/OE.17.020178
+> Qianqian Fang, "μMCX - Modern, Easy-to-Adapt, Hardware-Accelerated 3D Monte Carlo
+> Photon Simulator in 800 Lines of Code," Optica Biophotonics Congress 2026, Paper OS3D.3
 
 ---
 
@@ -992,4 +1097,5 @@ umcx bundles the following open-source libraries directly in the source tree
 | Component | Version | Location | License | Description |
 |-----------|---------|----------|---------|-------------|
 | [JSON for Modern C++](https://github.com/nlohmann/json) | 3.11.3 | `src/nlohmann/json.hpp` | MIT | Single-header C++11 JSON parser and serializer by Niels Lohmann |
-| [miniz](https://github.com/richgel999/miniz) | — | `src/lib/` | MIT | Single-file zlib/deflate compression library used for binary JData output |
+| [ZMat](https://github.com/NeuroJSON/zmat) | — | `src/zmat` | GPLv3 | Single-header zlib/deflate compression library used for binary JData output |
+| [miniz](https://github.com/richgel999/miniz) | — | `src/zmat` | MIT | Single-file zlib/deflate compression library, embedded inside zmat.h |
