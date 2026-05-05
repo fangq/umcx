@@ -274,7 +274,7 @@ struct MCX_photon { // per thread
             savedetector(detpos, detdata, detphotonbuffer, gcfg);
         }
     }
-    template<const bool isreflect, const bool issavedet>   //< propagating photon from one scattering site to the next, return 1 when terminated
+    template<const bool isreflect, const bool issavedet>   //< propagate photon from one scattering site to the next, return 1 when terminated
     int sprint(MCX_volume<int>& invol, MCX_volume<float>& outvol, MCX_medium props[], MCX_rand& ran, float detphotonbuffer[], const MCX_param& gcfg) {
         while (len.x > 0.f) {
             int newvoxelid = step(invol, props[(mediaid & MED_MASK)]);
@@ -289,20 +289,20 @@ struct MCX_photon { // per thread
                 }
 
                 if (len.y > gcfg.tend) {
-                    return 1;    // terminating photon due to exceeding maximum time gate
+                    return 1;    // terminate photon due to exceeding maximum time gate
                 }
 
                 int newmediaid = ((newvoxelid >= 0) ? invol.get(newvoxelid) : 0);
 
                 if (isreflect && gcfg.isreflect && props[(mediaid & MED_MASK)].n != props[(newmediaid & MED_MASK)].n) {
                     if (reflect(props[((mediaid & MED_MASK))].n, props[(newmediaid & MED_MASK)].n, ran, newvoxelid, newmediaid) && (newvoxelid < 0 || (newmediaid & MED_MASK) == 0)) {
-                        return 1;    // terminating photon due to transmitting to background at boundary
+                        return 1;    // terminate photon due to transmitting to background at boundary
                     }
                 } else if (newvoxelid < 0 || (newmediaid & MED_MASK) == 0) {
-                    return 1;                   // terminating photon due to continue moving to 0-valued voxel or out of domain
+                    return 1;                   //< terminate photon due to continue moving to 0-valued voxel or out of domain
                 }
 
-                lastvoxelidx = newvoxelid;      // save last saving site
+                lastvoxelidx = newvoxelid;      //< save last saving site
                 mediaid = newmediaid;
             }
         }
@@ -353,12 +353,12 @@ struct MCX_photon { // per thread
         lastvoxelidx = invol.index(ipos.x, ipos.y, ipos.z, 0);
         return tmin;
     }
-    void save(MCX_volume<float>& outvol, int tshift, float mua, const MCX_param& gcfg) {
+    void save(MCX_volume<float>& outvol, int tshift, float mua, const MCX_param& gcfg) {   //< add energy loss to the enclosing voxel
         outvol.add(gcfg.outputtype == otEnergy ? (len.w - pos.w) : (mua < FLT_EPSILON ? (len.w * len.z) : (len.w - pos.w) / mua), lastvoxelidx + tshift * outvol.dimxyz);
         len.w = pos.w;
         len.z = 0.f;
     }
-    void scatter(MCX_medium& prop, MCX_rand& ran) {
+    void scatter(MCX_medium& prop, MCX_rand& ran) {    //< perform a photon scattering - produce a random arimuth (0-2*pi) and zenith/pole (0-pi) and a random scattering length
         len.x = ran.next_scat_len();
         float tmp0 = (2.f * FLT_PI) * ran.rand01(); //next arimuth angle
         sincosf(tmp0, &rvec.z, &rvec.w);
@@ -375,7 +375,7 @@ struct MCX_photon { // per thread
         rvec = float4(1.f / vec.x, 1.f / vec.y, 1.f / vec.z, rvec.w);
         vec.w++; // stops at 16777216 due to finite precision
     }
-    float reflectcoeff(float n1, float n2) {
+    float reflectcoeff(float n1, float n2) {    //< perform a bounary reflection/transmission
         float Icos = fabsf((ipos.w == 0) ? vec.x : (ipos.w == 1 ? vec.y : vec.z));
         float tmp0 = n1 * n1, tmp1 = n2 * n2;
         float tmp2 = 1.f - tmp0 / tmp1 * (1.f - Icos * Icos); /** 1-[n1/n2*sin(si)]^2 = cos(ti)^2*/
@@ -391,7 +391,7 @@ struct MCX_photon { // per thread
 
         return 1.f;  //< total reflection
     }
-    void transmit(float n1, float n2) {
+    void transmit(float n1, float n2) {    //< transmit photon across a boundary
         float tmp0 = n1 / n2;
 
         vec.scalexyz(tmp0);
@@ -399,7 +399,7 @@ struct MCX_photon { // per thread
         tmp0 = 1.f / sqrtf(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
         vec.scalexyz(tmp0);
     }
-    int reflect(float n1, float n2, MCX_rand& ran, int& newvoxelid, int& newmediaid) {
+    int reflect(float n1, float n2, MCX_rand& ran, int& newvoxelid, int& newmediaid) {    //< reflect photon at a boundary
         float Rtotal = reflectcoeff(n1, n2);
 
         if (Rtotal < 1.f && ran.rand01() > Rtotal) {
@@ -412,7 +412,7 @@ struct MCX_photon { // per thread
         newmediaid = mediaid;
         return 0;
     }
-    void rotatevector(float stheta, float ctheta, float sphi, float cphi) {
+    void rotatevector(float stheta, float ctheta, float sphi, float cphi) {    //< rotate the photon direction vector by theta/phi
         if ( vec.z > -1.f + FLT_EPSILON && vec.z < 1.f - FLT_EPSILON ) {
             float tmp0 = 1.f - vec.z * vec.z, tmp1 = stheta / sqrtf(tmp0);
             vec = float4(tmp1 * (vec.x * vec.z * cphi - vec.y * sphi) + vec.x * ctheta, tmp1 * (vec.y * vec.z * cphi + vec.x * sphi) + vec.y * ctheta, -tmp1 * tmp0 * cphi + vec.z * ctheta, vec.w);
@@ -423,14 +423,14 @@ struct MCX_photon { // per thread
         float tmp0 = 1.f / sqrtf(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
         vec.scalexyz(tmp0);
     }
-    void savedetector(const float4 detpos[], MCX_detect& detdata, float detphotonbuffer[], const MCX_param& gcfg) {
+    void savedetector(const float4 detpos[], MCX_detect& detdata, float detphotonbuffer[], const MCX_param& gcfg) {    //< save detected photon data
         for (int i = 0; i < gcfg.detnum; i++) {
             if ((detpos[i].x - pos.x) * (detpos[i].x - pos.x) + (detpos[i].y - pos.y) * (detpos[i].y - pos.y) + (detpos[i].z - pos.z) * (detpos[i].z - pos.z) < detpos[i].w * detpos[i].w) {
                 detdata.addphoton(i + 1, pos, vec, detphotonbuffer, gcfg);
             }
         }
     }
-    void sincosf(float ang, float* sine, float* cosine) {
+    void sincosf(float ang, float* sine, float* cosine) {    //< sincos helper function
         *sine = sinf(ang);
         *cosine = cosf(ang);
     }
@@ -445,7 +445,7 @@ struct MCX_clock {
     }
 };
 /// MCX_userio parses user JSON input and saves output to binary JSON files
-struct MCX_userio {    // main user IO handling interface, must be isolated with omp target/GPU code, can use non-trivially copyable classes such as json or STL
+struct MCX_userio {    //< main user IO handling interface, must be isolated with omp target/GPU code, can use non-trivially copyable classes such as json or STL
     json cfg;
     MCX_volume<int> domain;
     const std::map<std::set<std::string>, std::pair<std::string, char>> cmdflags = {{{"-n", "--photon"}, {"/Session/Photons", 'f'}}, {{"-b", "--reflect"}, {"/Session/DoMismatch", 'i'}}, {{"-s", "--session"}, {"/Session/ID", 's'}}, {{"-H", "--maxdetphoton"}, {"/Session/MaxDetPhoton", 'i'}},
@@ -468,8 +468,8 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
             }
         }
     };
-    MCX_userio(char* argv[], int argc = 1) {   // parsing command line, argc must be greater than 1
-        if (argc < 0) {
+    MCX_userio(char* argv[], int argc = 1) {   //< parse user command line options
+        if (argc < 0) {   //< argc<0 indicates argv[0] is a bjdata buffer (of length -argc) passed from matlab
             cfg = json::from_bjdata(std::vector<char>(argv[0], argv[0] - argc));
             initdomain();
             return;
@@ -527,11 +527,11 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
             std::exit(0);
         }
     }
-    void printhelp() {
+    void printhelp() {   //< print help info
         std::cout << "/uMCX/ - Portable, massively-parallel physical volumetric ray-tracer\nCopyright (c) 2024-2025 Qianqian Fang <q.fang@neu.edu>\thttps://mcx.space\n\nFormat:\n\tumcx -flag1 value1 -flag2 value2 ...\n\t\tor\n\tumcx inputjson.json\n\tumcx benchmarkname\n\nFlags:\n\t-f/--input\tinput json file\n\t-Q/--bench\t\tbenchmark name\n\t-n/--photon\tphoton number [1e6]\n\t-s/--session\toutput name\n\t-u/--unitinmm\tvoxel size in mm [1]\n\t-E/--seed\tRNG seed [1648335518]\n\t-O/--outputtype\t[x]: fluence-rate, f: fluence, e: energy\n\t-d/--savedet\tSave detected photons [1]\n\t-S/--save2pt\tSave volumetric output [1]\n\t-w/--savedetflag\t1:detector-id, 4:partial-path, 16:exit-pos, 32:exit-dir, add to combine [5]\n\t-U/--normalize\tnormalize output [1]\n\t-j/--json\tJSON string to overwrite settings\n\t-t/--thread\tmanual total threads\n\t-T/--blocksize\tmanual thread-block size [64]\n\t-G/--gpuid\tdevice ID [1]\n\t--dumpjson\tdump settings as json\n\t--dumpmask\tdump domain as binary json\n\t-h/--help\tprint help\n\t-N/--net\tbrowse or download simulations from NeuroJSON.io\n\nBuilt-in benchmarks: " << MCX_benchmarks.dump(8) << std::endl;
         std::exit(0);
     }
-    void initdomain() {
+    void initdomain() {   //< initialize labled volume using input JSON shape data
         domain.reshape(cfg["Domain"]["Dim"][0], cfg["Domain"]["Dim"][1], cfg["Domain"]["Dim"][2]);
 
         if (cfg.contains("Shapes")) {
@@ -542,7 +542,7 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
                     domain.reshape(shapes["Grid"]["Size"][0], shapes["Grid"]["Size"][1], shapes["Grid"]["Size"][2], 1, shapes["Grid"]["Tag"]);
                 }
 
-                for (const auto& obj : cfg["Shapes"])
+                for (const auto& obj : cfg["Shapes"])   //< rasterize each shape construct to a voxelated grid
                     if (shapeparser.find(obj.begin().key()) != shapeparser.end()) {
 #ifndef __NVCOMPILER
                         _PRAGMA_OMPACC_HOST_LOOP(collapse(2))
@@ -566,13 +566,13 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
                     } else if (!(obj.begin().key() == "Name" || obj.begin().key() == "Grid" || obj.begin().key() == "Origin")) {
                         throw std::runtime_error(std::string("shape construct") + obj.begin().key() + " is not supported");
                     }
-            } else {
+            } else {   //< parse JData-formatted volumes, _ArraySize_/_ArrayType_/(_ArrayData_ or _ArrayZipData_+_ArrayZipType_+ArrayZipSize_)
                 domain.reshape(cfg["Shapes"]["_ArraySize_"][0], cfg["Shapes"]["_ArraySize_"][1], cfg["Shapes"]["_ArraySize_"][2]);
 
-                if (cfg["Shapes"].contains("_ArrayData_")) {
+                if (cfg["Shapes"].contains("_ArrayData_")) {  //< _ArrayData_ directly stores the voxel values in the column-major format
                     const auto data = cfg["Shapes"]["_ArrayData_"].get<std::vector<int>>();
                     memcpy(domain.vol, data.data(), domain.dimxyz * sizeof(int));
-                } else if (cfg["Shapes"].contains("_ArrayZipData_")) {
+                } else if (cfg["Shapes"].contains("_ArrayZipData_")) {  //< _ArrayZipData_ contains column-major serialized volume data with zlib/gzip compression
                     auto& zd = cfg["Shapes"]["_ArrayZipData_"];
                     const auto zs = zd.is_string() ? zd.get<std::string>() : std::string {};
                     auto zbuf = zd.is_string() ? std::vector<unsigned char>(zs.begin(), zs.end()) : zd.get<std::vector<unsigned char>>();
@@ -597,7 +597,7 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
             maskdetectors(cfg["Optode"]["Detector"]);
         }
     }
-    void maskdetectors(json detectors) {
+    void maskdetectors(json detectors) {  //< mark all boundary voxels covering the detector disk for fast detection
         const int8_t neighbors[26][3] = {{-1, -1, -1}, {0, -1, -1}, {1, -1, -1}, {-1, 0, -1}, {0, 0, -1}, {1, 0, -1}, {-1, 1, -1}, {0, 1, -1}, {1, 1, -1}, {-1, -1, 0}, {0, -1, 0}, {1, -1, 0}, {-1, 0, 0}, {1, 0, 0}, {-1, 1, 0}, {0, 1, 0}, {1, 1, 0}, {-1, -1, 1}, {0, -1, 1}, {1, -1, 1}, {-1, 0, 1}, {0, 0, 1}, {1, 0, 1}, {-1, 1, 1}, {0, 1, 1}, {1, 1, 1}};
 
         for (const auto& det : detectors) {
@@ -625,7 +625,7 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
                     }
         }
     }
-    void benchmark(std::string benchname) {
+    void benchmark(std::string benchname) {  //< define built-in benchmark data via JSON constructs
         MCX_benchmarkid bmid = (MCX_benchmarkid)std::distance(MCX_benchmarks.begin(), std::find(MCX_benchmarks.begin(), MCX_benchmarks.end(), benchname));
         cfg = {{"Session", {{"ID", benchname}, {"Photons", 1000000}}}, {"Forward", {{"T0", 0.0}, {"T1", 5e-9}, {"Dt", 5e-9}}},
             {"Domain", {{"Media", {{{"mua", 0.0}, {"mus", 0.0}, {"g", 1.0}, {"n", 1.0}}, {{"mua", 0.005}, {"mus", 1.0}, {"g", 0.01}, {"n", 1.37}}, {{"mua", 0.002}, {"mus", 5.0}, {"g", 0.9}, {"n", 1.0}}}}, {"Dim", {60, 60, 60}}}},
@@ -662,11 +662,11 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
             throw std::runtime_error(std::string("benchmark ") + benchname + " is not found");
         }
     }
-    void loadfromfile(std::string finput) {
+    void loadfromfile(std::string finput) {  //< load JSON input from file name
         cfg = json::parse(std::ifstream(finput));
     }
     template<class T>
-    void savevolume(MCX_volume<T>& outputvol, float normalizer = 1.f, std::string outputfile = "") {
+    void savevolume(MCX_volume<T>& outputvol, float normalizer = 1.f, std::string outputfile = "") {  //< save output volume data to a JNIfTI (https://neurojson.org/jnifti) binary json (.bnii) file
         (normalizer != 1.f) ? outputvol.scale(normalizer) : PASS;
         json bniifile = {
             { "NIFTIHeader", {{"Dim", {outputvol.size.x, outputvol.size.y, outputvol.size.z, outputvol.size.w}}}},
@@ -679,7 +679,7 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
         };
         savebjdata(bniifile, (outputfile.length() ? outputfile : (cfg["Session"].contains("ID") ? cfg["Session"]["ID"].get<std::string>() + ".bnii" : "output.bnii")));
     }
-    void savedetphoton(MCX_detect& detdata, const MCX_param& gcfg, std::string outputfile = "") {
+    void savedetphoton(MCX_detect& detdata, const MCX_param& gcfg, std::string outputfile = "") {  //< save output detected photon data to a JData (https://neurojson.org/jdata) binary json file
         json bdetpfile = {{"MCXData", {
                     {"Info", {{"Version", 1}, {"MediaNum", gcfg.mediumnum}, {"DetNum", gcfg.detnum}, {"ColumnNum", detdata.detphotondatalen}, {"TotalPhoton", detdata.detphotondatalen}, {"DetectedPhoton", detdata.detectedphoton}, {"SavedPhoton", detdata.savedcount()}, {"LengthUnit", gcfg.unitinmm}} },
                     {
@@ -692,13 +692,13 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
         };
         savebjdata(bdetpfile, (outputfile.length() ? outputfile : (cfg["Session"].contains("ID") ? cfg["Session"]["ID"].get<std::string>() + "_detp.jdb" : "output_detp.jdb")));
     }
-    void savebjdata(json& bjdata, std::string outputfile = "") {
+    void savebjdata(json& bjdata, std::string outputfile = "") {  //< save data to a BJData (https://neurojson.org/bjdata) binary json file
         outputfile = (outputfile.length() ? outputfile : (cfg["Session"].contains("ID") ? cfg["Session"]["ID"].get<std::string>() + ".bnii" : "output.bnii"));
         std::ofstream outputdata(outputfile, std::ios::out | std::ios::binary);
         json::to_bjdata(bjdata, outputdata, true, true);
         outputdata.close();
     }
-    std::string runcmd(std::string cmd) {
+    std::string runcmd(std::string cmd) {  //< execute shell command and return the output - use it to call curl to download online simulations from neurojson.io
         std::array<char, 128> buffer;
         std::string result;
         std::unique_ptr<FILE, int(*)(FILE*)> pipe(popen(cmd.c_str(), "r"), pclose);
@@ -715,7 +715,7 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
     }
 };
 template<const bool isreflect, const bool issavedet>
-double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, MCX_volume<float>& outputvol, float4* detpos, MCX_medium* prop, MCX_detect& detdata) {
+double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, MCX_volume<float>& outputvol, float4* detpos, MCX_medium* prop, MCX_detect& detdata) {    //< main simulation kernel
     double energyescape = 0.0;
     std::srand(!(cfg["Session"].contains("RNGSeed")) ? 1648335518 : (cfg["Session"]["RNGSeed"].get<int>() > 0 ? cfg["Session"]["RNGSeed"].get<int>() : std::time(0)));
     const uint64_t nphoton = cfg["Session"].value("Photons", 1000000);
