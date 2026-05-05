@@ -20,6 +20,8 @@
 #include <set>
 #include <map>
 #include "nlohmann/json.hpp"
+#define ZMAT_IMPLEMENTATION
+#include "zmat/zmat.h"
 #ifdef MATLAB_MEX_FILE /// MATLAB binding
     #include "mex.h"
 #endif
@@ -570,6 +572,23 @@ struct MCX_userio {    // main user IO handling interface, must be isolated with
                 if (cfg["Shapes"].contains("_ArrayData_")) {
                     const auto data = cfg["Shapes"]["_ArrayData_"].get<std::vector<int>>();
                     memcpy(domain.vol, data.data(), domain.dimxyz * sizeof(int));
+                } else if (cfg["Shapes"].contains("_ArrayZipData_")) {
+                    auto& zd = cfg["Shapes"]["_ArrayZipData_"];
+                    const auto zs = zd.is_string() ? zd.get<std::string>() : std::string {};
+                    auto zbuf = zd.is_string() ? std::vector<unsigned char>(zs.begin(), zs.end()) : zd.get<std::vector<unsigned char>>();
+                    size_t outlen = 0;
+                    unsigned char* outbuf = nullptr;
+                    int r = 0;
+
+                    if (zd.is_string()) {
+                        zmat_decode(zbuf.size(), zbuf.data(), &outlen, &outbuf, zmBase64, &r);
+                        zbuf.assign(outbuf, outbuf + outlen);
+                        zmat_free(&outbuf);
+                    }
+
+                    zmat_decode(zbuf.size(), zbuf.data(), &outlen, &outbuf, cfg["Shapes"].value("_ArrayZipType_", "zlib") == "gzip" ? zmGzip : zmZlib, &r);
+                    std::copy(outbuf, outbuf + outlen, domain.vol);
+                    zmat_free(&outbuf);
                 }
             }
         }

@@ -143,7 +143,7 @@ end
 %% define the simulation session flags
 
 Session.ID = filestub;
-if(isempty(filestub))
+if (isempty(filestub))
     Session.ID = fullfile(fpath, fname, fext);
 end
 Session = copycfg(cfg, 'isreflect', Session, 'DoMismatch');
@@ -184,13 +184,13 @@ if (exist('Shapes', 'var'))
     mcxsession.Shapes = Shapes;
 end
 if (strcmp(fext, '.jdb'))
-    if(isempty(filestub))
+    if (isempty(filestub))
         [varargout{1:nargout}] = savebj('', mcxsession, varargin{:});
     else
         [varargout{1:nargout}] = saveubjson('', mcxsession, 'filename', [filestub, '.jdb'], varargin{:});
     end
 else
-    if(isempty(filestub))
+    if (isempty(filestub))
         [varargout{1:nargout}] = savejson('', mcxsession, 'compression', 'zlib', varargin{:});
     else
         [varargout{1:nargout}] = savejson('', mcxsession, 'filename', [filestub, '.json'], 'compression', 'zlib', varargin{:});
