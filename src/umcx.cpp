@@ -5,7 +5,7 @@
 ///       \li Must be readable, write clean C++11 code as short as possible without obscurity
 ///       \li Must be highly portable, support as many CPUs/GPUs and C++11 compilers as possible
 ///       \li Must use human-understandable JSON/binary JSON input/output formats compatible with MCX
-///       \li Avoid using fancy C++ classes inside omp target region as OpenMP support is limited
+///       \li Avoid using complex C++ classes (such as std) inside omp target region as OpenMP support is limited
 ///  \section sFormat Code Formatting
 //        Please always run "make pretty" inside \c src before each commit, needing \c astyle
 ///  \section sLicense Open-source License
@@ -361,7 +361,7 @@ struct MCX_photon { // per thread
         len.w = pos.w;
         len.z = 0.f;
     }
-    void scatter(MCX_medium& prop, MCX_rand& ran) {    //< perform a photon scattering - produce a random arimuth (0-2*pi) and zenith/pole (0-pi) and a random scattering length
+    void scatter(MCX_medium& prop, MCX_rand& ran) {    //< perform a photon scattering - produce random arimuth (0-2*pi) and zenith/pole (0-pi) angles and a random scattering length
         len.x = ran.next_scat_len();
         float tmp0 = (2.f * FLT_PI) * ran.rand01(); //next arimuth angle
         sincosf(tmp0, &rvec.z, &rvec.w);
@@ -722,7 +722,7 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
     }
 };
 template<const bool isreflect, const bool issavedet>
-std::pair<double, double> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, MCX_volume<float>& outputvol, float4* detpos, MCX_medium* prop, MCX_detect& detdata) {    //< main simulation core
+double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, MCX_volume<float>& outputvol, float4* detpos, MCX_medium* prop, MCX_detect& detdata, double& totallaunched) {    //< main simulation core
     double energyescape = 0.0, energytotal = 0.0;
     std::srand(!(cfg["Session"].contains("RNGSeed")) ? 1648335518 : (cfg["Session"]["RNGSeed"].get<int>() > 0 ? cfg["Session"]["RNGSeed"].get<int>() : std::time(0)));
     const uint64_t nphoton = cfg["Session"].value("Photons", 1000000);
@@ -782,7 +782,8 @@ std::pair<double, double> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volum
 #ifdef _OPENACC
     free(detphotonbuffer);
 #endif
-    return {energyescape, energytotal};
+    totallaunched = energytotal;
+    return energyescape;
 }
 /// Main MCX simulation function, parsing user inputs via string arrays in argv[argn], can be called repeatedly
 int MCX_run_simulation(char* argv[], int argn = 1, int nlhs = 0, void* plhs[] = NULL) {    //< main simulation function, from user-input handling, to volume setup, to execute simulation, to save output
@@ -817,11 +818,11 @@ int MCX_run_simulation(char* argv[], int argn = 1, int nlhs = 0, void* plhs[] = 
     MCX_clock timer;
     const uint64_t nphoton = io.cfg["Session"]["Photons"].get<uint64_t>();
     int templateid = (gcfg.isreflect * 10 + gcfg.issavedet);
-    std::pair<double, double> energypair = (templateid == 00) ? MCX_kernel<false, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
-                                           (templateid == 01) ? MCX_kernel<false, true>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
-                                           (templateid == 10) ? MCX_kernel<true, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
-                                           /*templateid == 11*/ MCX_kernel<true, true>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata);
-    double energyescape = energypair.first, energytotal = energypair.second;
+    double energytotal = 0.0;
+    double energyescape = (templateid == 00) ? MCX_kernel<false, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata, energytotal) :
+                          (templateid == 01) ? MCX_kernel<false, true> (io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata, energytotal) :
+                          (templateid == 10) ? MCX_kernel<true,  false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata, energytotal) :
+                          /*templateid == 11*/ MCX_kernel<true,  true> (io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata, energytotal);
     float normalizer = (gcfg.outputtype == otEnergy) ? (1.f / energytotal) : ((gcfg.outputtype == otFluenceRate) ? gcfg.rtstep / (energytotal * gcfg.unitinmm * gcfg.unitinmm) : 1.f / (energytotal * gcfg.unitinmm * gcfg.unitinmm));
 
 #ifdef MATLAB_MEX_FILE

@@ -66,11 +66,12 @@ allowing existing MCX simulations to run with minimal modification.
 - Multi-region heterogeneous optical domains
 - Refractive index mismatch and Fresnel reflection/refraction at boundaries
 - Henyey-Greenstein anisotropic scattering phase function
-- Multiple source types: pencil, isotropic, cone, disk, planar
+- Multiple source types: pencil, isotropic, cone, disk, planar, fourier
 - Time-gated simulation with configurable temporal windows
 - Photon detection with partial path length recording (for DRS/DCS)
 - Volumetric fluence-rate, fluence, or energy deposition output
 - JSON and Binary JData (BJDATA/BNII) input/output compatible with MCX
+- Compressed JData input via `_ArrayZipData_` (zlib/deflate) in domain volume
 - Built-in benchmark cases for validation
 - Online simulation database access via [NeuroJSON.io](https://neurojson.io)
 - GPU offloading via OpenMP 4.5 (`target`) and OpenACC 2.0 (`acc`)
@@ -129,12 +130,12 @@ minimize code length, **—** = not implemented
 | NVIDIA GPU (`-G`) | ✔ | ✔ |
 | Multi-GPU simulation | ✔ | — |
 | CPU/GPU cross-vendor support | ✔ (mcxcl) | ✔ |
-| Complex sources, focal length | ✔ | p (5/15) |
+| Complex sources, focal length | ✔ | p (6/15) |
 | Built-in benchmarks (`--bench`) | ✔ | p (8/10) |
 | Customize detected-photon output (`-w`) | ✔ | p (4/8) |
 | Widefield launch | ✔ | ✔ |
 | JSON/Binary JSON data output | ✔ | ✔ |
-| JSON data compression (`-z`) | ✔ | t |
+| JSON data compression (`-z`) | ✔ | p (read ✔, write t) |
 | Patterned source | ✔ | — |
 | Photon sharing | ✔ | — |
 | Photon replay (`-q` / RF replay) | ✔ | — |
@@ -403,7 +404,7 @@ summarizes the main differences:
 | Multiple output types (`outputtype`) | ✔ | ✔ |
 | Boundary reflection (`DoMismatch`) | ✔ | ✔ |
 | Detected photon output (`detp`) | ✔ | ✔ |
-| Source types | 15 | 5 (pencil/isotropic/cone/disk/planar) |
+| Source types | 15 | 6 (pencil/isotropic/cone/disk/planar/fourier) |
 | Multi-GPU | ✔ | — |
 | Photon replay | ✔ | — |
 | Polarized light | ✔ | — |
@@ -761,13 +762,37 @@ The `Shapes` array defines geometric primitives that are rasterized (painted) in
 the 3D domain volume in order. Each shape object tags voxels inside it with a
 medium index. Shapes are applied sequentially; later shapes overwrite earlier ones.
 
-Alternatively, `Shapes` can contain a pre-computed volume array in JData format:
+Alternatively, `Shapes` can contain a pre-computed volume array in
+[JData](https://neurojson.org/jdata) format. Two storage forms are supported:
+
+**Uncompressed** (`_ArrayData_`): raw array values stored directly as a JSON array
+or as inline binary in a BJData file.
 
 ```json
-"Shapes": [
-  {"_ArrayType_": "uint8", "_ArraySize_": [Nx, Ny, Nz], "_ArrayData_": [...]}
-]
+"Shapes": {
+  "_ArrayType_": "uint8",
+  "_ArraySize_": [Nx, Ny, Nz],
+  "_ArrayData_": [0, 1, 1, 2, ...]
+}
 ```
+
+**Compressed** (`_ArrayZipData_`): array data compressed with zlib/deflate and
+stored as a base64-encoded string (in JSON text files) or as inline binary bytes
+(in BJData/BNII files). umcx automatically decompresses the data on load using
+the embedded [ZMat](https://github.com/NeuroJSON/zmat) library.
+
+```json
+"Shapes": {
+  "_ArrayType_": "uint8",
+  "_ArraySize_": [Nx, Ny, Nz],
+  "_ArrayZipType_": "zlib",
+  "_ArrayZipData_": "<base64-encoded zlib stream>"
+}
+```
+
+The `_ArrayZipData_` form is the default output of MCX and most JData toolboxes
+when saving large volumes, so umcx can read any `.bnii` file produced by MCX
+without modification.
 
 #### Supported shape primitives
 
@@ -947,6 +972,24 @@ The source type is set via `Optode/Source/Type`. The following types are support
 | `cone` | Cone beam; photons uniformly distributed within a cone around `Dir` | `[half_angle, 0, 0, 0]` (radians) | — |
 | `disk` | Disk (top-hat) source; photons uniformly distributed over a disk centered at `Pos` in the plane perpendicular to `Dir` | `[outer_radius, inner_radius, 0, 0]` (mm) | — |
 | `planar` | Planar (rectangular) source; photons uniformly distributed over a parallelogram | `[edge1_x, edge1_y, edge1_z, 0]` | `[edge2_x, edge2_y, edge2_z, 0]` |
+| `fourier` | Spatially-modulated widefield source; photon weight is sinusoidally modulated across a parallelogram — used for SFDI (spatial frequency domain imaging) | `[edge1_x, edge1_y, edge1_z, fx+phase]` | `[edge2_x, edge2_y, edge2_z, fy]` |
+
+#### Fourier source details
+
+The `fourier` source illuminates the same parallelogram as `planar` but
+multiplies each photon's initial weight by a sinusoidal pattern:
+
+```
+w = (cos(2π (fx·u + fy·v + phase)) · (1 − mod) + 1) / 2
+```
+
+where `u, v ∈ [0, 1]` are the photon's random positions along the two edge
+vectors, and the parameters are encoded in `Param1[3]` and `Param2[3]`:
+
+| Parameter | Encoding | Meaning |
+|-----------|----------|---------|
+| `Param1[3]` | `fx + phase` | `fx` = integer part = spatial frequency along edge 1 (cycles); `phase` = fractional part = phase offset (fraction of one cycle, i.e. `phase × 2π` radians) |
+| `Param2[3]` | `fy + mod` | `fy` = integer part = spatial frequency along edge 2 (cycles); `mod` = fractional part = modulation depth offset (0 = full sinusoidal swing 0→1, approach 1 for near-DC illumination) |
 
 **Example: disk source with 5 mm radius:**
 ```json
@@ -968,6 +1011,22 @@ The source type is set via `Optode/Source/Type`. The following types are support
   "Param2": [0, 10, 0, 0]
 }
 ```
+
+**Example: Fourier (SFDI) source — 2 cycles along x, no modulation along y:**
+```json
+"Source": {
+  "Type": "fourier",
+  "Pos": [50, 200, 100],
+  "Dir": [0, 0, -1],
+  "Param1": [100, 0, 0, 2],
+  "Param2": [0, 100, 0, 0]
+}
+```
+
+This illuminates a 100×100 voxel patch starting at (50, 200, 100) with
+`w = (cos(4π·u) + 1) / 2` — a 2-cycle sinusoidal pattern along x with
+average weight 0.5 per photon. This matches the pattern used in the Digimouse
+SFDI benchmark (`digimouse_input.json`).
 
 ---
 
