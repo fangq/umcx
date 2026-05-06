@@ -102,7 +102,7 @@ struct MCX_param {
 template<class T>
 struct MCX_volume { // shared, read-only
     dim4 size;
-    uint64_t dimxy = 0, dimxyz = 0, dimxyzt = 0;
+    uint64_t dimyz = 0, dimxyz = 0, dimxyzt = 0;
     T* vol = nullptr;
 
     MCX_volume() {}
@@ -115,8 +115,8 @@ struct MCX_volume { // shared, read-only
     }
     void reshape(uint32_t Nx, uint32_t Ny, uint32_t Nz, uint32_t Nt = 1, T value = 0.0f) {
         size = dim4(Nx, Ny, Nz, Nt);
-        dimxy = Nx * Ny;
-        dimxyz = dimxy * Nz;
+        dimyz = Ny * Nz;
+        dimxyz = dimyz * Nx;
         dimxyzt = dimxyz * Nt;
         delete [] vol;
         vol = new T[dimxyzt] {};
@@ -126,7 +126,7 @@ struct MCX_volume { // shared, read-only
         delete [] vol;
     }
     int index(short ix, short iy, short iz, int it = 0) { // when outside the volume, return -1, otherwise, return 1d index
-        return !(ix < 0 || iy < 0 || iz < 0 || ix >= (short)size.x || iy >= (short)size.y || iz >= (short)size.z || it >= (int)size.w) ? (int)(it * dimxyz + iz * dimxy + iy * size.x + ix) : -1;
+        return !(ix < 0 || iy < 0 || iz < 0 || ix >= (short)size.x || iy >= (short)size.y || iz >= (short)size.z || it >= (int)size.w) ? (int)(it * dimxyz + ix * dimyz + iy * size.z + iz) : -1;
     }
     T& get(const int idx) { // must be inside the volume
         return vol[idx];
@@ -568,26 +568,30 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
                     }
             } else {   //< parse JData-formatted volumes, _ArraySize_/_ArrayType_/(_ArrayData_ or _ArrayZipData_+_ArrayZipType_+ArrayZipSize_)
                 domain.reshape(cfg["Shapes"]["_ArraySize_"][0], cfg["Shapes"]["_ArraySize_"][1], cfg["Shapes"]["_ArraySize_"][2]);
+                const std::string dtype = cfg["Shapes"].value("_ArrayType_", "int32");
 
-                if (cfg["Shapes"].contains("_ArrayData_")) {  //< _ArrayData_ directly stores the voxel values in the column-major format
-                    const auto data = cfg["Shapes"]["_ArrayData_"].get<std::vector<int>>();
-                    memcpy(domain.vol, data.data(), domain.dimxyz * sizeof(int));
-                } else if (cfg["Shapes"].contains("_ArrayZipData_")) {  //< _ArrayZipData_ contains column-major serialized volume data with zlib/gzip compression
-                    auto& zd = cfg["Shapes"]["_ArrayZipData_"];
-                    const auto zs = zd.is_string() ? zd.get<std::string>() : std::string {};
-                    auto zbuf = zd.is_string() ? std::vector<unsigned char>(zs.begin(), zs.end()) : zd.get<std::vector<unsigned char>>();
+                if (cfg["Shapes"].contains("_ArrayData_")) {  //< get as native element type then copy to promote each element to int safely
+#define LD(T) (([&](){ auto d = cfg["Shapes"]["_ArrayData_"].get<std::vector<T>>(); std::copy(d.begin(), d.end(), domain.vol); }()), 0)
+                    (void)(dtype == "uint8" ? LD(uint8_t) : (dtype == "int8" ? LD(int8_t) : (dtype == "uint16" ? LD(uint16_t) : (dtype == "int16" ? LD(int16_t) : (dtype == "uint32" ? LD(uint32_t) : LD(int32_t))))));
+#undef LD
+                } else if (cfg["Shapes"].contains("_ArrayZipData_")) {  //< decompress then reinterpret raw bytes as native element type and copy to int
+                    auto& zdata = cfg["Shapes"]["_ArrayZipData_"];
+                    const auto zvec = zdata.is_string() ? zdata.get<std::string>() : std::string {};
+                    auto zbuf = zdata.is_string() ? std::vector<unsigned char>(zvec.begin(), zvec.end()) : zdata.get<std::vector<unsigned char>>();
                     size_t outlen = 0;
                     unsigned char* outbuf = nullptr;
                     int r = 0;
 
-                    if (zd.is_string()) {
+                    if (zdata.is_string()) {
                         zmat_decode(zbuf.size(), zbuf.data(), &outlen, &outbuf, zmBase64, &r);
                         zbuf.assign(outbuf, outbuf + outlen);
                         zmat_free(&outbuf);
                     }
 
                     zmat_decode(zbuf.size(), zbuf.data(), &outlen, &outbuf, cfg["Shapes"].value("_ArrayZipType_", "zlib") == "gzip" ? zmGzip : zmZlib, &r);
-                    std::copy(outbuf, outbuf + outlen, domain.vol);
+#define CP(T) (std::copy((T*)outbuf, (T*)outbuf + domain.dimxyz, domain.vol), 0)
+                    (void)(dtype == "uint8" ? CP(uint8_t) : (dtype == "int8" ? CP(int8_t) : (dtype == "uint16" ? CP(uint16_t) : (dtype == "int16" ? CP(int16_t) : (dtype == "uint32" ? CP(uint32_t) : CP(int32_t))))));
+#undef CP
                     zmat_free(&outbuf);
                 }
             }
@@ -672,7 +676,7 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
             { "NIFTIHeader", {{"Dim", {outputvol.size.x, outputvol.size.y, outputvol.size.z, outputvol.size.w}}}},
             {
                 "NIFTIData", {{"_ArraySize_", {outputvol.size.x, outputvol.size.y, outputvol.size.z, outputvol.size.w}},
-                    {"_ArrayType_", ((std::string(typeid(T).name()) == "f") ? "single" : "int32")}, {"_ArrayOrder_", "c"},
+                    {"_ArrayType_", ((std::string(typeid(T).name()) == "f") ? "single" : "int32")},
                     {"_ArrayData_", std::vector<T>(outputvol.vol, outputvol.vol + outputvol.dimxyzt)}
                 }
             }
@@ -715,7 +719,7 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
     }
 };
 template<const bool isreflect, const bool issavedet>
-double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, MCX_volume<float>& outputvol, float4* detpos, MCX_medium* prop, MCX_detect& detdata) {    //< main simulation kernel
+double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, MCX_volume<float>& outputvol, float4* detpos, MCX_medium* prop, MCX_detect& detdata) {    //< main simulation core
     double energyescape = 0.0;
     std::srand(!(cfg["Session"].contains("RNGSeed")) ? 1648335518 : (cfg["Session"]["RNGSeed"].get<int>() > 0 ? cfg["Session"]["RNGSeed"].get<int>() : std::time(0)));
     const uint64_t nphoton = cfg["Session"].value("Photons", 1000000);
@@ -773,13 +777,13 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
     return energyescape;
 }
 /// Main MCX simulation function, parsing user inputs via string arrays in argv[argn], can be called repeatedly
-int MCX_run_simulation(char* argv[], int argn = 1, int nlhs = 0, void* plhs[] = NULL) {
+int MCX_run_simulation(char* argv[], int argn = 1, int nlhs = 0, void* plhs[] = NULL) {    //< main simulation function, from user-input handling, to volume setup, to execute simulation, to save output
     MCX_userio io(argv, argn);
     std::vector<float> srcparam1 = io.cfg["Optode"]["Source"].value("Param1", std::vector<float> {0.f, 0.f, 0.f, 0.f});
     std::vector<float> srcparam2 = io.cfg["Optode"]["Source"].value("Param2", std::vector<float> {0.f, 0.f, 0.f, 0.f});
     const MCX_param gcfg = {
         /*.tstart*/ JNUM(io.cfg, "Forward", "T0"), /*.tend*/ JNUM(io.cfg, "Forward", "T1"), /*.rtstep*/ 1.f / JNUM(io.cfg, "Forward", "Dt"), /*.unitinmm*/ io.cfg["Domain"].value("LengthUnit", 1.f),
-        /*.maxgate*/ (int)((JNUM(io.cfg, "Forward", "T1") - JNUM(io.cfg, "Forward", "T0")) / JNUM(io.cfg, "Forward", "Dt") + 0.5f), /*.isreflect*/ io.cfg["Session"].value("DoMismatch", 0),
+        /*.maxgate*/ (int)((JNUM(io.cfg, "Forward", "T1") - JNUM(io.cfg, "Forward", "T0")) / JNUM(io.cfg, "Forward", "Dt") + 0.5f), /*.isreflect*/ io.cfg["Session"].value("DoMismatch", 1),
         /*.isnormalized*/ io.cfg["Session"].value("DoNormalize",  1), /*.issavevol*/ io.cfg["Session"].value("DoSaveVolume", 1),
         /*.issavedet*/ io.cfg["Session"].value("DoPartialPath", 1), /*.savedetflag*/ io.cfg["Session"].value("SaveDetFlag", (dpDetID + dpPPath)),
         /*.mediumnum*/ (int)io.cfg["Domain"]["Media"].size(), /*.outputtype*/ (int)MCX_outputtype.find(io.cfg["Session"].value("OutputType", "x")[0]),
@@ -816,7 +820,7 @@ int MCX_run_simulation(char* argv[], int argn = 1, int nlhs = 0, void* plhs[] = 
 
     if (nlhs >= 1) {
         const char* fieldnames[] = {"data"};
-        mwSize vsize[] = {outputvol.size.x, outputvol.size.y, outputvol.size.z, outputvol.size.w}, dsize[] = {detdata.savedcount(), (mwSize)detdata.detphotondatalen};
+        mwSize vsize[] = {outputvol.size.z, outputvol.size.y, outputvol.size.x, outputvol.size.w}, dsize[] = {detdata.savedcount(), (mwSize)detdata.detphotondatalen};
         plhs[0] = (void*)mxCreateStructMatrix(1, 1, 1, fieldnames);
         mxSetFieldByNumber((mxArray*)plhs[0], 0, 0, mxCreateNumericArray((outputvol.size.w > 1) ? 4 : 3, vsize, mxSINGLE_CLASS, mxREAL));
         memcpy((float*)mxGetData(mxGetField((mxArray*)plhs[0], 0, "data")), outputvol.vol, outputvol.dimxyzt * sizeof(float));

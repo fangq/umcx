@@ -146,7 +146,7 @@ Session.ID = filestub;
 if (isempty(filestub))
     Session.ID = fullfile(fpath, fname, fext);
 end
-Session = copycfg(cfg, 'isreflect', Session, 'DoMismatch');
+Session = copycfg(cfg, 'isreflect', Session, 'DoMismatch', 1);
 Session = copycfg(cfg, 'issave2pt', Session, 'DoSaveVolume');
 Session = copycfg(cfg, 'issavedet', Session, 'DoPartialPath');
 Session = copycfg(cfg, 'issaveexit', Session, 'DoSaveExit');
