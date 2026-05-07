@@ -573,10 +573,8 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
                 domain.reshape(cfg["Shapes"]["_ArraySize_"][0], cfg["Shapes"]["_ArraySize_"][1], cfg["Shapes"]["_ArraySize_"][2]);
                 const std::string dtype = cfg["Shapes"].value("_ArrayType_", "int32");
 
-                if (cfg["Shapes"].contains("_ArrayData_")) {  //< get as native element type then copy to promote each element to int safely
-#define LD(T) (([&](){ auto d = cfg["Shapes"]["_ArrayData_"].get<std::vector<T>>(); std::copy(d.begin(), d.end(), domain.vol); }()), 0)
-                    (void)(dtype == "uint8" ? LD(uint8_t) : (dtype == "int8" ? LD(int8_t) : (dtype == "uint16" ? LD(uint16_t) : (dtype == "int16" ? LD(int16_t) : (dtype == "uint32" ? LD(uint32_t) : LD(int32_t))))));
-#undef LD
+                if (cfg["Shapes"].contains("_ArrayData_")) {  //< use get<vector<int>> to avoid instantiating get<vector<uint8_t>> which pulls in binary_t on nvptx LTO
+                    std::copy_n(cfg["Shapes"]["_ArrayData_"].get<std::vector<int>>().data(), domain.dimxyz, domain.vol);
                 } else if (cfg["Shapes"].contains("_ArrayZipData_")) {  //< decompress then reinterpret raw bytes as native element type and copy to int
                     auto& zdata = cfg["Shapes"]["_ArrayZipData_"];
                     const auto zvec = zdata.is_string() ? zdata.get<std::string>() : std::string {};
@@ -747,7 +745,7 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
 #endif
     _PRAGMA_OMPACC_COPYIN(pos, dir, seeds, gcfg, inputvol) _PRAGMA_OMPACC_COPYIN(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt])
     _PRAGMA_OMPACC_COPY(outputvol, detdata) _PRAGMA_OMPACC_COPY(outputvol.vol[0:outputvol.dimxyzt], detdata.detphotondata[0:totaldetphotondatalen])
-    _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, firstprivate(detphotonbuffer[0:ppathlen]), reduction(+ : energyescape) reduction(+ : energytotal) firstprivate(ran, p))
+    _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, firstprivate(detphotonbuffer[0:ppathlen]), reduction(+ : energyescape) firstprivate(ran, p))
 #else  // GPU_OFFLOAD
     _PRAGMA_OMPACC_HOST_LOOP(reduction(+ : energyescape) reduction(+ : energytotal) firstprivate(ran, p))
 #endif
@@ -768,7 +766,8 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
         p.run<isreflect, issavedet>(inputvol, outputvol, prop, detpos, detdata, detphotonbuffer, ran, gcfg);
 
         if ((p.mediaid & MED_MASK) != 0) {
-            energytotal += launchweight;
+            _PRAGMA_OMPACC_(atomic)
+            energytotal += (double)launchweight;
             energyescape += p.pos.w;
         }
 
