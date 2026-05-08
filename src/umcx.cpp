@@ -719,9 +719,11 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
         return result;
     }
 };
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 template<const bool isreflect, const bool issavedet>
-double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, MCX_volume<float>& outputvol, float4* detpos, MCX_medium* prop, MCX_detect& detdata, double& totallaunched) {    //< main simulation core
-    double energyescape = 0.0, energytotal = 0.0;
+std::pair<float, float> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, MCX_volume<float>& outputvol, float4* detpos, MCX_medium* prop, MCX_detect& detdata) {    //< main simulation core, returns {energyescape, energytotal}
+    float energyescape = 0.f, energytotal = 0.f;
     std::srand(!(cfg["Session"].contains("RNGSeed")) ? 1648335518 : (cfg["Session"]["RNGSeed"].get<int>() > 0 ? cfg["Session"]["RNGSeed"].get<int>() : std::time(0)));
     const uint64_t nphoton = cfg["Session"].value("Photons", 1000000);
     const dim4 seeds = {(uint32_t)std::rand(), (uint32_t)std::rand(), (uint32_t)std::rand(), (uint32_t)std::rand()};  //< TODO: need to implement per-thread ran object
@@ -744,7 +746,7 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
     const int blocksize = cfg["Session"].value("BlockSize", 64); // nvc++: blockdim={thread_limit,1,1}
 #endif
     _PRAGMA_OMPACC_COPYIN(pos, dir, seeds, gcfg, inputvol) _PRAGMA_OMPACC_COPYIN(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt])
-    _PRAGMA_OMPACC_COPY(outputvol, detdata) _PRAGMA_OMPACC_COPY(outputvol.vol[0:outputvol.dimxyzt], detdata.detphotondata[0:totaldetphotondatalen])
+    _PRAGMA_OMPACC_COPY(outputvol, detdata, energytotal) _PRAGMA_OMPACC_COPY(outputvol.vol[0:outputvol.dimxyzt], detdata.detphotondata[0:totaldetphotondatalen])
     _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, firstprivate(detphotonbuffer[0:ppathlen]), reduction(+ : energyescape) firstprivate(ran, p))
 #else  // GPU_OFFLOAD
     _PRAGMA_OMPACC_HOST_LOOP(reduction(+ : energyescape) reduction(+ : energytotal) firstprivate(ran, p))
@@ -767,7 +769,7 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
 
         if ((p.mediaid & MED_MASK) != 0) {
             _PRAGMA_OMPACC_(atomic)
-            energytotal += (double)launchweight;
+            energytotal += launchweight;
             energyescape += p.pos.w;
         }
 
@@ -781,9 +783,9 @@ double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, M
 #ifdef _OPENACC
     free(detphotonbuffer);
 #endif
-    totallaunched = energytotal;
-    return energyescape;
+    return {energyescape, energytotal};
 }
+#pragma GCC diagnostic pop
 /// Main MCX simulation function, parsing user inputs via string arrays in argv[argn], can be called repeatedly
 int MCX_run_simulation(char* argv[], int argn = 1, int nlhs = 0, void* plhs[] = NULL) {    //< main simulation function, from user-input handling, to volume setup, to execute simulation, to save output
     MCX_userio io(argv, argn);
@@ -817,11 +819,11 @@ int MCX_run_simulation(char* argv[], int argn = 1, int nlhs = 0, void* plhs[] = 
     MCX_clock timer;
     const uint64_t nphoton = io.cfg["Session"]["Photons"].get<uint64_t>();
     int templateid = (gcfg.isreflect * 10 + gcfg.issavedet);
-    double energytotal = 0.0;
-    double energyescape = (templateid == 00) ? MCX_kernel<false, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata, energytotal) :
-                          (templateid == 01) ? MCX_kernel<false, true> (io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata, energytotal) :
-                          (templateid == 10) ? MCX_kernel<true,  false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata, energytotal) :
-                          /*templateid == 11*/ MCX_kernel<true,  true> (io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata, energytotal);
+    std::pair<float, float> energies = (templateid == 00) ? MCX_kernel<false, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
+                                       (templateid == 01) ? MCX_kernel<false, true> (io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
+                                       (templateid == 10) ? MCX_kernel<true,  false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
+                                       /*templateid == 11*/ MCX_kernel<true,  true> (io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata);
+    float energyescape = energies.first, energytotal = energies.second;
     float normalizer = (gcfg.outputtype == otEnergy) ? (1.f / energytotal) : ((gcfg.outputtype == otFluenceRate) ? gcfg.rtstep / (energytotal * gcfg.unitinmm * gcfg.unitinmm) : 1.f / (energytotal * gcfg.unitinmm * gcfg.unitinmm));
 
 #ifdef MATLAB_MEX_FILE
