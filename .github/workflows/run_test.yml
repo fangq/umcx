@@ -334,3 +334,51 @@ jobs:
           cd test
           ./testumcx.sh
 
+  mex_test:
+    name: MATLAB MEX build & NeuroJSON test
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v1
+        with:
+          release: R2022a
+
+      - name: Build umcx MEX
+        run: |
+          cd src
+          make mex
+          ls -la ../umcxlab/
+
+      - name: Clone jsonlab (provides loadjson/savebj)
+        run: |
+          git clone --depth 1 https://github.com/NeuroJSON/jsonlab.git
+
+      - name: Download a built-in MCX simulation from NeuroJSON.io
+        run: |
+          # Same URL pattern as umcx -N/--net (see umcx.cpp)
+          curl -fsSL --retry 3 "https://neurojson.io:7777/mcx/cube60" -o cube60.json
+          head -c 300 cube60.json && echo
+          test -s cube60.json
+
+      - name: Run MEX simulation in MATLAB
+        uses: matlab-actions/run-command@v1
+        with:
+          command: |
+            addpath('umcxlab');
+            addpath('jsonlab');
+            cfg = loadjson('cube60.json');
+            [flux, detp] = umcx(savebj(cfg));
+            assert(~isempty(flux),  'flux output is empty');
+            assert(isfield(flux, 'data'),  'flux has no data field');
+            fprintf('PASS: flux.data size = %s\n', mat2str(size(flux.data)));
+            fprintf('PASS: detected photons = %d\n', size(detp.data, 1));
+
