@@ -41,7 +41,7 @@ ifeq ($(MEX),1)
 endif
 
 GFX      ?= gfx906
-SM       ?= sm_35
+SM       ?= sm_53
 AMDCXX   ?= /opt/rocm/llvm/bin/clang++
 CC_ARCH  ?= cc70,cc80,cc86,cc90,ptx
 
@@ -83,7 +83,7 @@ $(OUTPUT_DIR)/$(BINARY): makedirs $(if $(filter 1,$(MEX)),,$(OBJS))
 ifeq ($(MEX),1)
 	$(if $(MEXDIRECT),$(MEXDIRLNK),$(MEXLNK))
 else
-	$(CXX)  $(CXXFLAGS) -o $(OUTPUT_DIR)/$(BINARY) $(OBJS) $(USERLINKFLAGS)
+	$(CXX)  $(CXXFLAGS) $(USERCXXFLAGS) -o $(OUTPUT_DIR)/$(BINARY) $(OBJS) $(USERLINKFLAGS)
 endif
 
 %.o: %.c
