@@ -723,7 +723,7 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 template<const bool isreflect, const bool issavedet>
 std::pair<float, float> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, MCX_volume<float>& outputvol, float4* detpos, MCX_medium* prop, MCX_detect& detdata) {    //< main simulation core, returns {energyescape, energytotal}
-    float energyescape = 0.f, energytotal = 0.f;
+    float energyescape[1] = {0.f}, energytotal[1] = {0.f};
     std::srand(!(cfg["Session"].contains("RNGSeed")) ? 1648335518 : (cfg["Session"]["RNGSeed"].get<int>() > 0 ? cfg["Session"]["RNGSeed"].get<int>() : std::time(0)));
     const uint64_t nphoton = cfg["Session"].value("Photons", 1000000);
     const dim4 seeds = {(uint32_t)std::rand(), (uint32_t)std::rand(), (uint32_t)std::rand(), (uint32_t)std::rand()};  //< TODO: need to implement per-thread ran object
@@ -746,10 +746,10 @@ std::pair<float, float> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<
     const int blocksize = cfg["Session"].value("BlockSize", 64); // nvc++: blockdim={thread_limit,1,1}
 #endif
     _PRAGMA_OMPACC_COPYIN(pos, dir, seeds, gcfg, inputvol) _PRAGMA_OMPACC_COPYIN(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt])
-    _PRAGMA_OMPACC_COPY(outputvol, detdata, energytotal) _PRAGMA_OMPACC_COPY(outputvol.vol[0:outputvol.dimxyzt], detdata.detphotondata[0:totaldetphotondatalen])
-    _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, firstprivate(detphotonbuffer[0:ppathlen]), reduction(+ : energyescape) firstprivate(ran, p))
+    _PRAGMA_OMPACC_COPY(outputvol, detdata, energyescape[0:1], energytotal[0:1]) _PRAGMA_OMPACC_COPY(outputvol.vol[0:outputvol.dimxyzt], detdata.detphotondata[0:totaldetphotondatalen])
+    _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, firstprivate(detphotonbuffer[0:ppathlen]), firstprivate(ran, p))
 #else  // GPU_OFFLOAD
-    _PRAGMA_OMPACC_HOST_LOOP(reduction(+ : energyescape) reduction(+ : energytotal) firstprivate(ran, p))
+    _PRAGMA_OMPACC_HOST_LOOP(reduction(+ : energyescape[0:1]) reduction(+ : energytotal[0:1]) firstprivate(ran, p))
 #endif
 
     for (uint64_t i = 0; i < nphoton; i++) {
@@ -769,8 +769,9 @@ std::pair<float, float> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<
 
         if ((p.mediaid & MED_MASK) != 0) {
             _PRAGMA_OMPACC_(atomic)
-            energytotal += launchweight;
-            energyescape += p.pos.w;
+            energytotal[0] += launchweight;
+            _PRAGMA_OMPACC_(atomic)
+            energyescape[0] += p.pos.w;
         }
 
 #ifndef _OPENACC
@@ -783,7 +784,7 @@ std::pair<float, float> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<
 #ifdef _OPENACC
     free(detphotonbuffer);
 #endif
-    return {energyescape, energytotal};
+    return {energyescape[0], energytotal[0]};
 }
 #pragma GCC diagnostic pop
 /// Main MCX simulation function, parsing user inputs via string arrays in argv[argn], can be called repeatedly
