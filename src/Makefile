@@ -41,7 +41,7 @@ ifeq ($(MEX),1)
 endif
 
 GFX      ?= gfx906
-SM       ?= sm_53
+SM       ?= sm_35
 AMDCXX   ?= /opt/rocm/llvm/bin/clang++
 CC_ARCH  ?= cc70,cc80,cc86,cc90,ptx
 
