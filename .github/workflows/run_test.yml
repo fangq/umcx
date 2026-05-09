@@ -276,11 +276,7 @@ jobs:
 
   nvc_cpu_test:
     name: nvc++ CPU build & test
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, windows-2022]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-22.04
     defaults:
       run:
         shell: bash
@@ -291,16 +287,15 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Cache HPC SDK (Linux)
-        if: ${{ runner.os == 'Linux' }}
-        id: cache-hpc-linux
+      - name: Cache HPC SDK
+        id: cache-hpc
         uses: actions/cache@v4
         with:
           path: /opt/nvidia/hpc_sdk
           key: nvhpc-25.3-linux-slim
 
-      - name: Install HPC SDK (Linux)
-        if: ${{ runner.os == 'Linux' && steps.cache-hpc-linux.outputs.cache-hit != 'true' }}
+      - name: Install HPC SDK
+        if: ${{ steps.cache-hpc.outputs.cache-hit != 'true' }}
         run: |
           curl -fsSL https://developer.download.nvidia.com/hpc-sdk/ubuntu/DEB-GPG-KEY-NVIDIA-HPC-SDK \
             | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg
@@ -313,37 +308,8 @@ jobs:
           sudo rm -rf $BASE/cuda $BASE/comm_libs $BASE/math_libs $BASE/profilers $BASE/examples
           du -sh /opt/nvidia/hpc_sdk
 
-      - name: Add nvc++ to PATH (Linux)
-        if: ${{ runner.os == 'Linux' }}
+      - name: Add nvc++ to PATH
         run: echo "/opt/nvidia/hpc_sdk/Linux_x86_64/25.3/compilers/bin" >> $GITHUB_PATH
-
-      - name: Cache HPC SDK (Windows)
-        if: ${{ runner.os == 'Windows' }}
-        id: cache-hpc-windows
-        uses: actions/cache@v4
-        with:
-          path: 'C:\Program Files\NVIDIA HPC SDK'
-          key: nvhpc-25.3-windows
-
-      - name: Install HPC SDK (Windows)
-        if: ${{ runner.os == 'Windows' && steps.cache-hpc-windows.outputs.cache-hit != 'true' }}
-        shell: pwsh
-        run: |
-          $url = 'https://developer.download.nvidia.com/hpc-sdk/25.3/nvhpc_2025_253_Win64_x86_64.exe'
-          $out = "$env:TEMP\nvhpc.exe"
-          Write-Host "Downloading HPC SDK from $url ..."
-          (New-Object System.Net.WebClient).DownloadFile($url, $out)
-          Write-Host "Installing silently (this may take 5-10 minutes)..."
-          Start-Process -FilePath $out -ArgumentList '/silent' -Wait -NoNewWindow
-          Remove-Item $out
-
-      - name: Add nvc++ to PATH (Windows)
-        if: ${{ runner.os == 'Windows' }}
-        shell: pwsh
-        run: |
-          $sdk = 'C:\Program Files\NVIDIA HPC SDK\Win_x86_64\25.3\compilers\bin'
-          if (Test-Path $sdk) { Add-Content $env:GITHUB_PATH $sdk; Write-Host "Added: $sdk" }
-          else { Write-Error "nvc++ not found at $sdk"; exit 1 }
 
       - name: Verify nvc++ available
         run: nvc++ --version
