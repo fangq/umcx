@@ -42,7 +42,7 @@
     #define _PRAGMA_OMPACC_COPY(...)      _PRAGMA(omp target data map(tofrom: __VA_ARGS__))
     #define _PRAGMA_OMPACC_HOST_LOOP(settings)   _PRAGMA(omp parallel for settings)
     #if defined(__GNUC__) && !defined(__clang__) && !defined(__NVCOMPILER) && !defined(__INTEL_COMPILER)
-        #define _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, ompignore, settings)   _PRAGMA(omp target teams distribute parallel for simd simdlen(32) num_teams(gridsize) thread_limit(blocksize) device(deviceid) settings)
+        #define _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, ompignore, settings)   _PRAGMA(omp target teams distribute parallel for simd simdlen(32) num_teams(gridsize) thread_limit(blocksize/32) device(deviceid) settings)   // gcc nvptx: blockdim={32,thread_limit,1}, simd fills the x=32 dimension
     #else
         #define _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, ompignore, settings)   _PRAGMA(omp target teams distribute parallel for num_teams(gridsize) thread_limit(blocksize) device(deviceid) settings)
     #endif
@@ -222,7 +222,7 @@ struct MCX_photon { // per thread
     MCX_photon(const float4& p0, const float4& v0, MCX_rand& ran, const MCX_param& gcfg) { //< constructor
         launch(p0, v0, ran, gcfg);
     }
-    float launch(const float4& p0, const float4& v0, MCX_rand& ran, const MCX_param& gcfg) { //< launch photon
+    void launch(const float4& p0, const float4& v0, MCX_rand& ran, const MCX_param& gcfg) { //< launch photon
         pos = p0;
         vec = v0;
 
@@ -255,7 +255,6 @@ struct MCX_photon { // per thread
         rvec = float4(1.f / v0.x, 1.f / v0.y, 1.f / v0.z, 0.f);
         len = float4(NAN, 0.f, 0.f, pos.w);
         ipos = short4((short)pos.x, (short)pos.y, (short)pos.z, -1);
-        return pos.w;
     }
     template<const bool isreflect, const bool issavedet>    //< main function to run a single photon from lunch to termination
     void run(MCX_volume<int>& invol, MCX_volume<float>& outvol, MCX_medium props[], const float4 detpos[], MCX_detect& detdata, float detphotonbuffer[], MCX_rand& ran, const MCX_param& gcfg) {
@@ -263,7 +262,7 @@ struct MCX_photon { // per thread
 
         if (lastvoxelidx < 0 && skip(invol) < 0.f) { //< widefield source, launch position is outside of the domain bounding box
             mediaid = 0; // reset stale mediaid so caller's tissue-entry check is not misled
-            return;
+            return; // ray never intersect with the voxel domain bounding box
         }
 
         mediaid = invol.get(lastvoxelidx);
@@ -719,11 +718,9 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
         return result;
     }
 };
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 template<const bool isreflect, const bool issavedet>
-std::pair<float, float> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, MCX_volume<float>& outputvol, float4* detpos, MCX_medium* prop, MCX_detect& detdata) {    //< main simulation core, returns {energyescape, energytotal}
-    float energyescape[1] = {0.f}, energytotal[1] = {0.f};
+double MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, MCX_volume<float>& outputvol, float4* detpos, MCX_medium* prop, MCX_detect& detdata) {    //< main simulation core, returns {energyescape, energytotal}
+    double energyescape = 0.0;
     std::srand(!(cfg["Session"].contains("RNGSeed")) ? 1648335518 : (cfg["Session"]["RNGSeed"].get<int>() > 0 ? cfg["Session"]["RNGSeed"].get<int>() : std::time(0)));
     const uint64_t nphoton = cfg["Session"].value("Photons", 1000000);
     const dim4 seeds = {(uint32_t)std::rand(), (uint32_t)std::rand(), (uint32_t)std::rand(), (uint32_t)std::rand()};  //< TODO: need to implement per-thread ran object
@@ -740,53 +737,39 @@ std::pair<float, float> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<
     const int totaldetphotondatalen = issavedet ? detdata.maxdetphotons * detdata.detphotondatalen : 1;
     const int deviceid = cfg["Session"].value("DeviceID", 1) - 1, gridsize = cfg["Session"].value("ThreadNum", 100000) / cfg["Session"].value("BlockSize", 64);
     (void)deviceid;
-#if defined(__GNUC__) && !defined(__clang__) && !defined(__NVCOMPILER) && !defined(__INTEL_COMPILER)
-    const int blocksize = cfg["Session"].value("BlockSize", 64) / 32;  // gcc nvptx: blockdim={32,thread_limit,1}, simd fills the x=32 dimension
-#else
     const int blocksize = cfg["Session"].value("BlockSize", 64); // nvc++: blockdim={thread_limit,1,1}
-#endif
+
     _PRAGMA_OMPACC_COPYIN(pos, dir, seeds, gcfg, inputvol) _PRAGMA_OMPACC_COPYIN(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt])
-    _PRAGMA_OMPACC_COPY(outputvol, detdata, energyescape[0:1], energytotal[0:1]) _PRAGMA_OMPACC_COPY(outputvol.vol[0:outputvol.dimxyzt], detdata.detphotondata[0:totaldetphotondatalen])
-    _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, firstprivate(detphotonbuffer[0:ppathlen]), firstprivate(ran, p))
-#else  // GPU_OFFLOAD
-    _PRAGMA_OMPACC_HOST_LOOP(reduction(+ : energyescape[0:1]) reduction(+ : energytotal[0:1]) firstprivate(ran, p))
+    _PRAGMA_OMPACC_COPY(outputvol, detdata) _PRAGMA_OMPACC_COPY(outputvol.vol[0:outputvol.dimxyzt], detdata.detphotondata[0:totaldetphotondatalen])
+    _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, firstprivate(detphotonbuffer[0:ppathlen]), reduction(+: energyescape) firstprivate(ran, p))
+#else  // ifdef GPU_OFFLOAD
+    _PRAGMA_OMPACC_HOST_LOOP(reduction(+: energyescape) firstprivate(ran, p))
 #endif
 
     for (uint64_t i = 0; i < nphoton; i++) {
-#ifndef _OPENACC
-#ifdef USE_MALLOC
+#if !defined(_OPENACC) && defined(USE_MALLOC)
         float* detphotonbuffer = (float*)malloc(sizeof(float) * detdata.ppathlen * issavedet);
         memset(detphotonbuffer, 0, sizeof(float) * detdata.ppathlen * issavedet);
-#else
+#elif !defined(_OPENACC)
         float detphotonbuffer[issavedet ? 10 : 1] = {};   // TODO: if changing 10 to detdata.ppathlen, speed of nvc++ built binary drops by 5x to 10x
-#endif
 #else
         memset(detphotonbuffer, 0, sizeof(float) * detdata.ppathlen * issavedet);
 #endif
         ran.reseed(seeds.x ^ i, seeds.y | i, seeds.z ^ i, seeds.w | i);
-        float launchweight = p.launch(pos, dir, ran, gcfg);
+        p.launch(pos, dir, ran, gcfg);
         p.run<isreflect, issavedet>(inputvol, outputvol, prop, detpos, detdata, detphotonbuffer, ran, gcfg);
+        energyescape += p.pos.w;
 
-        if ((p.mediaid & MED_MASK) != 0) {
-            _PRAGMA_OMPACC_(atomic)
-            energytotal[0] += launchweight;
-            _PRAGMA_OMPACC_(atomic)
-            energyescape[0] += p.pos.w;
-        }
-
-#ifndef _OPENACC
-#ifdef USE_MALLOC
+#if !defined(_OPENACC) && defined(USE_MALLOC)
         free(detphotonbuffer);
-#endif
 #endif
     }
 
 #ifdef _OPENACC
     free(detphotonbuffer);
 #endif
-    return {energyescape[0], energytotal[0]};
+    return energyescape;
 }
-#pragma GCC diagnostic pop
 /// Main MCX simulation function, parsing user inputs via string arrays in argv[argn], can be called repeatedly
 int MCX_run_simulation(char* argv[], int argn = 1, int nlhs = 0, void* plhs[] = NULL) {    //< main simulation function, from user-input handling, to volume setup, to execute simulation, to save output
     MCX_userio io(argv, argn);
@@ -820,15 +803,14 @@ int MCX_run_simulation(char* argv[], int argn = 1, int nlhs = 0, void* plhs[] = 
     MCX_clock timer;
     const uint64_t nphoton = io.cfg["Session"]["Photons"].get<uint64_t>();
     int templateid = (gcfg.isreflect * 10 + gcfg.issavedet);
-    std::pair<float, float> energies = (templateid == 00) ? MCX_kernel<false, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
-                                       (templateid == 01) ? MCX_kernel<false, true> (io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
-                                       (templateid == 10) ? MCX_kernel<true,  false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
-                                       /*templateid == 11*/ MCX_kernel<true,  true> (io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata);
-    float energyescape = energies.first, energytotal = energies.second;
-    float normalizer = (gcfg.outputtype == otEnergy) ? (1.f / energytotal) : ((gcfg.outputtype == otFluenceRate) ? gcfg.rtstep / (energytotal * gcfg.unitinmm * gcfg.unitinmm) : 1.f / (energytotal * gcfg.unitinmm * gcfg.unitinmm));
+    double energyescape = (templateid == 00) ? MCX_kernel<false, false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
+                          (templateid == 01) ? MCX_kernel<false, true> (io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
+                          (templateid == 10) ? MCX_kernel<true,  false>(io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata) :
+                          /*templateid == 11*/ MCX_kernel<true,  true> (io.cfg, gcfg, inputvol, outputvol, detpos, prop, detdata);
+    float normalizer = (gcfg.outputtype == otEnergy) ? (1.f / nphoton) : ((gcfg.outputtype == otFluenceRate) ? gcfg.rtstep / (nphoton * gcfg.unitinmm * gcfg.unitinmm) : 1.f / (nphoton * gcfg.unitinmm * gcfg.unitinmm));
 
 #ifdef MATLAB_MEX_FILE
-    mexPrintf("simulated energy %.2f, speed %.2f photon/ms, duration %.6f ms, normalizer %.6f, detected %d, absorbed %.6f%%\n", energytotal, nphoton / timer.elapse(), timer.elapse(), normalizer, detdata.savedcount(), (energytotal - energyescape) / energytotal * 100.);
+    mexPrintf("simulated energy %.2f, speed %.2f photon/ms, duration %.6f ms, normalizer %.6f, detected %d, absorbed %.6f%%\n", (double)nphoton, nphoton / timer.elapse(), timer.elapse(), normalizer, detdata.savedcount(), (nphoton - energyescape) / nphoton * 100.);
 
     if (nlhs >= 1) {
         const char* fieldnames[] = {"data"};
@@ -845,7 +827,7 @@ int MCX_run_simulation(char* argv[], int argn = 1, int nlhs = 0, void* plhs[] = 
     }
 
 #else
-    printf("simulated energy %.2f, speed %.2f photon/ms, duration %.6f ms, normalizer %.6f, detected %d, absorbed %.6f%%\n", energytotal, nphoton / timer.elapse(), timer.elapse(), normalizer, detdata.savedcount(), (energytotal - energyescape) / energytotal * 100.);
+    printf("simulated energy %.2f, speed %.2f photon/ms, duration %.6f ms, normalizer %.6f, detected %d, absorbed %.6f%%\n", (double)nphoton, nphoton / timer.elapse(), timer.elapse(), normalizer, detdata.savedcount(), (nphoton - energyescape) / nphoton * 100.);
     (gcfg.issavevol) ? io.savevolume<float>(outputvol, gcfg.isnormalized ? normalizer : 1.f) : (void)(nlhs | (plhs != NULL));
     (gcfg.issavedet) ? io.savedetphoton(detdata, gcfg)                                       : PASS;
 #endif

@@ -55,7 +55,7 @@ amdclang: CXXFLAGS+=-target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn
 amd: CXXFLAGS+=-foffload=amdgcn-amdhsa="-march=$(GFX)" -foffload="-lm" -fcf-protection=none -fno-stack-protector -no-pie
 nvidiaclang: CXX=clang++
 nvidiaclang: CXXFLAGS+=-fopenmp-targets=nvptx64 --cuda-gpu-arch=$(SM) -Wno-openmp-mapping -Wno-unused-command-line-argument
-nvidia: CXXFLAGS+=-foffload=nvptx-none -foffload="-lm" -fcf-protection=none -fno-stack-protector -no-pie
+nvidia: CXXFLAGS+=-foffload=nvptx-none -foffload-options=nvptx-none=-misa=$(SM) -foffload="-lm -Wa,--no-verify" -fcf-protection=none -fno-stack-protector -no-pie
 nvidiaclang nvidia amd amdclang nvc: CXXFLAGS+=-DGPU_OFFLOAD
 nvidiaclang nvidia amd amdclang: omp
 nvc: $(OUTPUT_DIR)/$(BINARY)
