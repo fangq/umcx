@@ -388,7 +388,10 @@ jobs:
                 % Optode/Domain/Shapes), so mcx2json is NOT needed here — that's for
                 % converting MCXLAB-style cfg (cfg.srcpos/.prop/.vol/etc.). Just re-encode
                 % the loaded struct as bjdata with no compression to match umcx.mex parser.
-                cfg = loadjson([name{1} '.json']);
+                % simplifycell=0 keeps JSON arrays as cells: prevents single-element
+                % "Shapes":[{"Grid":...}] from being flattened to {"Grid":...}, which
+                % umcx's parser rejects as "shape constructTag is not supported".
+                cfg = loadjson([name{1} '.json'], 'simplifycell', 0);
                 cfg.Session.Photons = 1e5;       % CI-time override for speed
                 bjdata = uint8(savebj('', cfg, 'compression', ''));
                 tic;
