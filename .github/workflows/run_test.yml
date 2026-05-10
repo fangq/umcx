@@ -384,10 +384,15 @@ jobs:
             addpath('jsonlab');
             for name = {'cube60', 'colin27', 'digimouse'}
                 fprintf('=== Running %s ===\n', name{1});
+                % NeuroJSON.io serves these in umcx JSON format already (Session/Forward/
+                % Optode/Domain/Shapes), so mcx2json is NOT needed here — that's for
+                % converting MCXLAB-style cfg (cfg.srcpos/.prop/.vol/etc.). Just re-encode
+                % the loaded struct as bjdata with no compression to match umcx.mex parser.
                 cfg = loadjson([name{1} '.json']);
                 cfg.Session.Photons = 1e5;       % CI-time override for speed
+                bjdata = uint8(savebj('', cfg, 'compression', ''));
                 tic;
-                [flux, detp] = umcx(savebj(cfg));
+                [flux, detp] = umcx(bjdata);
                 t = toc;
                 assert(~isempty(flux), '%s: flux output empty', name{1});
                 assert(isfield(flux, 'data'), '%s: flux has no data field', name{1});
