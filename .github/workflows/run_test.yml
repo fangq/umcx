@@ -352,33 +352,44 @@ jobs:
         with:
           release: R2022a
 
-      - name: Build umcx MEX
+      - name: Build umcx MEX (static-libstdc++ to avoid MATLAB GLIBCXX mismatch)
         run: |
           cd src
-          make mex
+          # MATLAB ships its own (older) libstdc++; statically linking C++ runtime into the
+          # mex avoids "GLIBCXX_3.4.29 not found" at MATLAB load time.
+          CXXFLAGS="-static-libstdc++ -static-libgcc" make mex
           ls -la ../umcxlab/
 
       - name: Clone jsonlab (provides loadjson/savebj)
         run: |
           git clone --depth 1 https://github.com/NeuroJSON/jsonlab.git
 
-      - name: Download a built-in MCX simulation from NeuroJSON.io
+      - name: Download built-in MCX simulations from NeuroJSON.io
         run: |
           # Same URL pattern as umcx -N/--net (see umcx.cpp)
-          curl -fsSL --retry 3 "https://neurojson.io:7777/mcx/cube60" -o cube60.json
-          head -c 300 cube60.json && echo
-          test -s cube60.json
+          for name in cube60 colin27 digimouse; do
+              echo "=== downloading $name.json ==="
+              curl -fsSL --retry 3 "https://neurojson.io:7777/mcx/$name" -o "$name.json"
+              ls -lh "$name.json"
+              test -s "$name.json"
+          done
 
-      - name: Run MEX simulation in MATLAB
+      - name: Run MEX simulations in MATLAB
         uses: matlab-actions/run-command@v1
         with:
           command: |
             addpath('umcxlab');
             addpath('jsonlab');
-            cfg = loadjson('cube60.json');
-            [flux, detp] = umcx(savebj(cfg));
-            assert(~isempty(flux),  'flux output is empty');
-            assert(isfield(flux, 'data'),  'flux has no data field');
-            fprintf('PASS: flux.data size = %s\n', mat2str(size(flux.data)));
-            fprintf('PASS: detected photons = %d\n', size(detp.data, 1));
+            for name = {'cube60', 'colin27', 'digimouse'}
+                fprintf('=== Running %s ===\n', name{1});
+                cfg = loadjson([name{1} '.json']);
+                cfg.Session.Photons = 1e5;       % CI-time override for speed
+                tic;
+                [flux, detp] = umcx(savebj(cfg));
+                t = toc;
+                assert(~isempty(flux), '%s: flux output empty', name{1});
+                assert(isfield(flux, 'data'), '%s: flux has no data field', name{1});
+                fprintf('PASS %s: flux.data size = %s, detected = %d, elapsed = %.2fs\n', ...
+                    name{1}, mat2str(size(flux.data)), size(detp.data, 1), t);
+            end
 
