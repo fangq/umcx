@@ -13,6 +13,6 @@ function varargout = umcxlab(cfg)
 
 bjdata = uint8(mcx2json(cfg, '.jdb', 'compression', ''));
 [varargout{1:nargout}] = umcx(bjdata);
-if(nargout > 0) % umcx internally use row-major array order, must transpose to become column-major
+if (nargout > 0) % umcx internally use row-major array order, must transpose to become column-major
     varargout{1}.data = permute(varargout{1}.data, [3 2 1 4]);
 end

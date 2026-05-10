@@ -23,7 +23,7 @@ function varargout = mcx2json(cfg, filestub, varargin)
 %    jsonstr, bjsonstr: a string buffer containing the seralized JSON or binary JSON
 %
 % Dependency:
-%    this function depends on the savejson/saveubjson functions from the
+%    this function depends on the savejson/savebj functions from the
 %    Iso2Mesh toolbox (http://iso2mesh.sf.net) or JSONlab toolbox
 %    (http://iso2mesh.sf.net/jsonlab)
 %
@@ -187,7 +187,7 @@ if (strcmp(fext, '.jdb'))
     if (isempty(filestub))
         [varargout{1:nargout}] = savebj('', mcxsession, varargin{:});
     else
-        [varargout{1:nargout}] = saveubjson('', mcxsession, 'filename', [filestub, '.jdb'], varargin{:});
+        [varargout{1:nargout}] = savebj('', mcxsession, 'filename', [filestub, '.jdb'], varargin{:});
     end
 else
     if (isempty(filestub))
