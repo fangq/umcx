@@ -352,12 +352,10 @@ jobs:
         with:
           release: R2022a
 
-      - name: Build umcx MEX (static-libstdc++ to avoid MATLAB GLIBCXX mismatch)
+      - name: Build umcx MEX
         run: |
           cd src
-          # MATLAB ships its own (older) libstdc++; statically linking C++ runtime into the
-          # mex avoids "GLIBCXX_3.4.29 not found" at MATLAB load time.
-          CXXFLAGS="-static-libstdc++ -static-libgcc" make mex
+          make mex
           ls -la ../umcxlab/
 
       - name: Clone jsonlab (provides loadjson/savebj)
@@ -376,6 +374,10 @@ jobs:
 
       - name: Run MEX simulations in MATLAB
         uses: matlab-actions/run-command@v1
+        env:
+          # MATLAB ships an old libstdc++ that lacks GLIBCXX_3.4.29; the MEX was built against
+          # the system's newer libstdc++. Preload system lib so MATLAB resolves new symbols.
+          LD_PRELOAD: /usr/lib/x86_64-linux-gnu/libstdc++.so.6
         with:
           command: |
             addpath('umcxlab');
