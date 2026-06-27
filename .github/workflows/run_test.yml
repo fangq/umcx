@@ -321,7 +321,10 @@ jobs:
           # nvc++ doesn't recognize -foffload=disable, so bypass the Makefile and invoke directly.
           # -mp without =gpu means host-only multicore OpenMP; no -DGPU_OFFLOAD so the source
           # uses the HOST_LOOP path which is plain "omp parallel for".
-          nvc++ -O3 -std=c++11 -mp -I. -o ../bin/umcx umcx.cpp
+          # -tp=px pins a portable generic x86-64 target; without it nvc++ auto-tunes to the
+          # runner CPU (e.g. znver4) and emits an AVX-512 scalef that its bundled llc can't
+          # select, crashing while compiling nlohmann/json.hpp on Zen4 runners.
+          nvc++ -O3 -std=c++11 -mp -tp=px -I. -o ../bin/umcx umcx.cpp
 
       - name: Run benchmarks
         run: |
