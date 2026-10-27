@@ -1,0 +1,150 @@
+name: Build+Upload uMCX packages
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  NVHPC_VERSION: "25.3"
+  NVHPC_PKG: nvhpc-25-3
+
+jobs:
+  linux_release:
+    name: Linux portable binary (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [nvc, amd]
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+      - name: Free disk space
+        run: |
+          # the HPC SDK installs to 17 GB and the ROCm image is several GB
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Cache HPC SDK with CUDA (nvc only)
+        if: ${{ matrix.target == 'nvc' }}
+        id: cache-hpc
+        uses: actions/cache@v4
+        with:
+          path: /opt/nvidia/hpc_sdk
+          key: nvhpc-${{ env.NVHPC_VERSION }}-linux-gpu-slim-v1
+      - name: Install HPC SDK (nvc only, if not cached)
+        if: ${{ matrix.target == 'nvc' && steps.cache-hpc.outputs.cache-hit != 'true' }}
+        run: |
+          curl -fsSL https://developer.download.nvidia.com/hpc-sdk/ubuntu/DEB-GPG-KEY-NVIDIA-HPC-SDK \
+            | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg] https://developer.download.nvidia.com/hpc-sdk/ubuntu/amd64 /' \
+            | sudo tee /etc/apt/sources.list.d/nvhpc.list
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ${{ env.NVHPC_PKG }}
+          sudo apt-get clean
+          # unlike the CPU-only test job, the CUDA toolkit is kept: offloading needs its
+          # nvvm, ptxas, fatbinary and nvlink; MPI, math libraries and profilers are dropped
+          BASE=/opt/nvidia/hpc_sdk/Linux_x86_64/${{ env.NVHPC_VERSION }}
+          sudo rm -rf $BASE/comm_libs $BASE/math_libs $BASE/profilers $BASE/examples $BASE/REDIST
+          sudo find $BASE/cuda -maxdepth 2 \( -name 'nsight*' -o -name libnvvp -o -name extras -o -name compute-sanitizer \) -exec rm -rf {} +
+          sudo find $BASE/cuda \( -name 'libcublas*' -o -name 'libcufft*' -o -name 'libcusparse*' -o -name 'libcusolver*' \
+            -o -name 'libcurand*' -o -name 'libnpp*' -o -name 'libnvjpeg*' -o -name 'libnvblas*' -o -name 'libcufile*' \) -delete
+          du -sh /opt/nvidia/hpc_sdk
+      - name: Build the manylinux_2_28 release builder
+        run: |
+          docker build --build-arg WITH_ROCM=${{ matrix.target == 'amd' && '1' || '0' }} \
+              -t umcx-linux-release-builder .github/linux_release_builder
+      - name: Build bin/umcx with nvc++ (manylinux_2_28)
+        if: ${{ matrix.target == 'nvc' }}
+        run: |
+          NV=/opt/nvidia/hpc_sdk/Linux_x86_64/${{ env.NVHPC_VERSION }}
+          RUN="docker run --rm -v $PWD:/src -v $NV:$NV:ro -e NVHPC_ROOT=$NV -e HOST_UID=$(id -u) -e HOST_GID=$(id -g)"
+          # nvc++ reads the gcc paths from bin/localrc: make one for the container's gcc first
+          $RUN umcx-linux-release-builder bash .github/linux_release_builder/build_umcx.sh localrc
+          $RUN -v $PWD/build/nvhpc_localrc:$NV/compilers/bin/localrc:ro \
+              umcx-linux-release-builder bash .github/linux_release_builder/build_umcx.sh nvc
+      - name: Build bin/umcx_amd with ROCm clang++ (manylinux_2_28)
+        if: ${{ matrix.target == 'amd' }}
+        run: |
+          docker run --rm -v $PWD:/src -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
+              umcx-linux-release-builder bash .github/linux_release_builder/build_umcx.sh amd
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release-${{ matrix.target }}
+          path: |
+            bin/umcx*
+            lib/
+          if-no-files-found: error
+
+  package:
+    name: Package Linux release
+    needs: linux_release
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: linux-release-*
+          merge-multiple: true
+          path: .
+      - name: Create release tag
+        run: perl -e "print 'RELEASE_TAG='. lc('${{ runner.os }}-${{ runner.arch }}-github-latest')" >> $GITHUB_ENV
+      - name: Test the packaged binaries on a stock Ubuntu (CPU fallback, no GPU driver)
+        run: |
+          chmod +x bin/umcx bin/umcx_amd
+          ldd bin/umcx bin/umcx_amd
+          cd bin
+          ./umcx_amd --bench cube60 -n 1e5 -S 0 -d 0
+          ./umcx --bench cube60 -n 1e4 -S 0 -d 0 || echo "umcx (nvc) needs the NVIDIA driver to start"
+      - name: Zip umcx
+        run: |
+          mkdir -p packages umcx/test
+          cp -a bin lib umcxlab README.md LICENSE.txt AUTHORS.md umcx/
+          cp test/testumcx.sh umcx/test/
+          rm -f umcx/bin/*.bnii umcx/bin/*.jdb
+          zip -FSr --symlink packages/umcx-${{ env.RELEASE_TAG }}.zip umcx
+          unzip -l packages/umcx-${{ env.RELEASE_TAG }}.zip
+      - name: Upload umcx package
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-umcx-packages-${{ env.RELEASE_TAG }}
+          path: packages/umcx-${{ env.RELEASE_TAG }}.zip
+
+  upload_package:
+    name: Upload Packages
+    needs: package
+    runs-on: ubuntu-22.04
+    if: ${{ !cancelled() && needs.package.result == 'success' && github.repository_owner == 'fangq' && github.actor == 'fangq' && github.event_name != 'pull_request' }}
+    steps:
+      - name: Download umcx
+        uses: actions/download-artifact@v4
+        with:
+          pattern: all-umcx-packages-*
+          merge-multiple: true
+          path: packages
+      - name: Display structure of downloaded files
+        run: ls -R packages
+      - name: Copy package to server
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+        with:
+          server: ${{ secrets.MCX_SERVER }}
+          username: ${{ secrets.MCX_SERVER_USER }}
+          ssh_private_key: ${{ secrets.MCX_SERVER_SSH_KEY }}
+          local_path: "packages/*"
+          remote_path: ${{ secrets.MCX_CI_PATH }}

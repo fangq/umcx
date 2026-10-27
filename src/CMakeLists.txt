@@ -28,6 +28,7 @@ option(BUILD_MEX "Build MATLAB MEX binding (output to umcxlab/)"          OFF)
 set(CUDA_PATH "" CACHE PATH "CUDA installation path (NVIDIA_CLANG backend)")
 
 # AMD GPU architecture (e.g. gfx906, gfx1030, gfx1100); run: rocminfo | grep gfx
+# AMD_CLANG accepts a comma-separated list (e.g. gfx906,gfx90a,gfx1100) for a multi-GPU binary
 set(GFX "gfx906" CACHE STRING "AMD GPU architecture for AMD/AMD_CLANG backends")
 # NVIDIA GPU architecture for NVIDIA_CLANG (e.g. sm_50, sm_70, sm_86)
 set(SM  "sm_50"  CACHE STRING "NVIDIA GPU SM version for NVIDIA_CLANG backend")
@@ -102,8 +103,7 @@ elseif(BACKEND STREQUAL "AMD")
 elseif(BACKEND STREQUAL "AMD_CLANG")
     list(APPEND _backend_copts
         -target x86_64-pc-linux-gnu
-        ${_ompacc} -fopenmp-targets=amdgcn-amd-amdhsa
-        -Xopenmp-target=amdgcn-amd-amdhsa -march=${GFX}
+        ${_ompacc} --offload-arch=${GFX}
         -fcf-protection=none -fno-stack-protector)
     set(_link_flags "${_ompacc}")
 

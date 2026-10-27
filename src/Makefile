@@ -40,7 +40,7 @@ ifeq ($(MEX),1)
     OUTPUT_DIR = $(MEXOUTDIR)
 endif
 
-GFX      ?= gfx906
+GFX      ?= gfx906# amdclang accepts a comma-separated list, e.g. gfx906,gfx90a,gfx1100
 SM       ?= sm_35
 AMDCXX   ?= /opt/rocm/llvm/bin/clang++
 CC_ARCH  ?= cc70,cc80,cc86,cc90,ptx
@@ -51,7 +51,7 @@ nvc: MEXBASEFLAGS =
 nvc: MEXBASELDFLAGS =
 nvc: MEXDIRECT = 1
 amdclang: CXX=$(AMDCXX)
-amdclang: CXXFLAGS+=-target x86_64-pc-linux-gnu -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa -Xopenmp-target=amdgcn-amd-amdhsa -march=$(GFX) -fcf-protection=none -fno-stack-protector
+amdclang: CXXFLAGS+=-target x86_64-pc-linux-gnu -fopenmp --offload-arch=$(GFX) -fcf-protection=none -fno-stack-protector
 amd: CXXFLAGS+=-foffload=amdgcn-amdhsa="-march=$(GFX)" -foffload="-lm" -fcf-protection=none -fno-stack-protector -no-pie
 nvidiaclang: CXX=clang++
 nvidiaclang: CXXFLAGS+=-fopenmp-targets=nvptx64 --cuda-gpu-arch=$(SM) -Wno-openmp-mapping -Wno-unused-command-line-argument
