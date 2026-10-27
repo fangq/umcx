@@ -731,6 +731,8 @@ std::pair<double, double> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volum
     float4 dir = {cfg["Optode"]["Source"]["Dir"][0].get<float>(), cfg["Optode"]["Source"]["Dir"][1].get<float>(), cfg["Optode"]["Source"]["Dir"][2].get<float>(), 0.f};
     float dirlen = sqrtf(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);  //< normalize Dir; a zero or non-finite Dir/Pos would never terminate
     dir = (dirlen > 0.f && std::isfinite(dirlen) && std::isfinite(pos.x + pos.y + pos.z)) ? float4(dir.x / dirlen, dir.y / dirlen, dir.z / dirlen, 0.f) : throw std::runtime_error("Optode.Source.Pos must be finite and Dir must be a non-zero vector");
+    MCX_rand ran0(seeds.x, seeds.y, seeds.z, seeds.w);
+    const MCX_photon p0(pos, dir, ran0, gcfg);  //< photon template, copied in the loop: gcc nvptx can not emit MCX_photon's constructor in device code
 #ifdef _OPENACC
     int ppathlen = detdata.ppathlen;
     (void)ppathlen;
@@ -742,7 +744,7 @@ std::pair<double, double> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volum
     (void)deviceid;
     const int blocksize = cfg["Session"].value("BlockSize", 64); // nvc++: blockdim={thread_limit,1,1}
 
-    _PRAGMA_OMPACC_COPYIN(pos, dir, seeds, gcfg, inputvol) _PRAGMA_OMPACC_COPYIN(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt])
+    _PRAGMA_OMPACC_COPYIN(pos, dir, seeds, gcfg, inputvol, p0) _PRAGMA_OMPACC_COPYIN(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt])
     _PRAGMA_OMPACC_COPY(outputvol, detdata, energyescape[0:1], energytotal[0:1]) _PRAGMA_OMPACC_COPY(outputvol.vol[0:outputvol.dimxyzt], detdata.detphotondata[0:totaldetphotondatalen])
     _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, firstprivate(detphotonbuffer[0:ppathlen]), )
 #elif defined(_OPENACC)  // OpenACC reduction does not support array sections; use atomic in body
@@ -761,8 +763,8 @@ std::pair<double, double> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volum
         memset(detphotonbuffer, 0, sizeof(float) * detdata.ppathlen * issavedet);
 #endif
         MCX_rand ran(seeds.x ^ i, seeds.y | i, seeds.z ^ i, seeds.w | i);   //< per-photon RNG and photon state are private by construction
-        MCX_photon p(pos, dir, ran, gcfg);
-        const float launchweight = p.len.w;
+        MCX_photon p = p0;
+        const float launchweight = p.launch(pos, dir, ran, gcfg);
         p.run<isreflect, issavedet>(inputvol, outputvol, prop, detpos, detdata, detphotonbuffer, ran, gcfg);
 
         if ((p.mediaid & MED_MASK) != 0) {
