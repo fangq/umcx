@@ -126,11 +126,81 @@ jobs:
           name: all-umcx-packages-${{ env.RELEASE_TAG }}
           path: packages/umcx-${{ env.RELEASE_TAG }}.zip
 
+  build_cpu:
+    name: ${{ matrix.os }} portable CPU binary
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15-intel, windows-2022]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Install dependencies (macos-14 only)
+        if: ${{ matrix.os == 'macos-14' }}
+        run: brew install gcc@13
+      - name: Install dependencies (Windows only)
+        if: ${{ runner.os == 'Windows' }}
+        run: |
+          choco install mingw -y
+          echo 'C:\ProgramData\mingw64\mingw64\bin' >> $GITHUB_PATH
+      - name: Build binary with the GCC runtime linked statically
+        run: |
+          cd src
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            CXX=g++-14; [[ "${{ matrix.os }}" == "macos-14" ]] && CXX=g++-13
+            # no -Bstatic on macOS: put libgomp.a ahead of the -lgomp that -fopenmp adds, and
+            # drop the Homebrew dylibs that are then unused
+            make CXX=$CXX USERLINKFLAGS="-static-libgcc -static-libstdc++ $($CXX -print-file-name=libgomp.a) -Wl,-dead_strip_dylibs"
+            strip ../bin/umcx
+            otool -L ../bin/umcx
+            # only the system libraries may remain
+            if otool -L ../bin/umcx | tail -n +2 | grep -vE '^\s+/usr/lib/|^\s+/System/'; then
+              echo "umcx links a non-system library"; exit 1
+            fi
+          else
+            # -static also links libgomp and winpthread, besides libgcc and libstdc++
+            make USERLINKFLAGS="-static"
+            strip ../bin/umcx.exe
+            objdump -p ../bin/umcx.exe | grep "DLL Name:"
+            if objdump -p ../bin/umcx.exe | grep "DLL Name:" | grep -iE 'libgomp|libwinpthread|libstdc|libgcc'; then
+              echo "umcx.exe links a GCC runtime DLL"; exit 1
+            fi
+          fi
+      - name: Run benchmarks and tests
+        run: |
+          cd bin
+          ./umcx --bench cube60 -n 1e6 -S 0 -d 0
+          ./umcx --bench cube60b -n 1e6 -S 0
+          cd ../test
+          ./testumcx.sh
+      - name: Create release tag
+        run: perl -e "print 'RELEASE_TAG='. lc('${{ runner.os }}-${{ runner.arch }}-github-latest')" >> $GITHUB_ENV
+      - name: Zip umcx
+        run: |
+          mkdir -p packages umcx/bin umcx/test
+          cp bin/umcx* umcx/bin/
+          cp -a umcxlab README.md LICENSE.txt AUTHORS.md umcx/
+          cp test/testumcx.sh umcx/test/
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            7z a -tzip packages/umcx-${{ env.RELEASE_TAG }}.zip umcx
+          else
+            zip -FSr --symlink packages/umcx-${{ env.RELEASE_TAG }}.zip umcx
+          fi
+      - name: Upload umcx package
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-umcx-packages-${{ env.RELEASE_TAG }}
+          path: packages/umcx-${{ env.RELEASE_TAG }}.zip
+
   upload_package:
     name: Upload Packages
-    needs: package
+    needs: [package, build_cpu]
     runs-on: ubuntu-22.04
-    if: ${{ !cancelled() && needs.package.result == 'success' && github.repository_owner == 'fangq' && github.actor == 'fangq' && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.package.result == 'success' && needs.build_cpu.result == 'success' && github.repository_owner == 'fangq' && github.actor == 'fangq' && github.event_name != 'pull_request' }}
     steps:
       - name: Download umcx
         uses: actions/download-artifact@v4

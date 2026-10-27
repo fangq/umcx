@@ -60,11 +60,20 @@ nvc)
     rm -f bin/umcx
     cd src
     make clean
-    # -tp=px: generic x86-64 host code, otherwise nvc++ tunes it for the build machine
-    make nvc CC_ARCH="$CC_ARCH,cuda$CUDAVER" USERCXXFLAGS="-tp=px" 2>&1 | grep -vE 'Generating|Loop |Minfo|^ +[0-9]+, ' || true
+    # -tp=px: generic x86-64 host code, otherwise nvc++ tunes it for the build machine;
+    # nvc++ has no -static-libstdc++/-static-libgcc: link the static archives ahead of the
+    # shared libraries nvc++ appends, and --as-needed drops those (like mcx does for libgomp)
+    make nvc CC_ARCH="$CC_ARCH,cuda$CUDAVER" USERCXXFLAGS="-tp=px" \
+        USERLINKFLAGS="-Wl,--as-needed -Wl,-Bstatic -lstdc++ -lgcc_eh -Wl,-Bdynamic" 2>&1 | grep -vE 'Generating|Loop |Minfo|^ +[0-9]+, ' || true
     cd ..
     [ -f bin/umcx ] || { echo "nvc++ build failed"; exit 1; }
     strip bin/umcx
+    # nvc++ always adds libgcc_s.so.1 and an RUNPATH to the build machine's SDK; nothing is
+    # imported from either (the CUDA driver is dlopen-ed), so both are removed
+    if ! nm -D --undefined-only bin/umcx | grep -q '@GCC_'; then
+        patchelf --remove-needed libgcc_s.so.1 bin/umcx
+    fi
+    patchelf --remove-rpath bin/umcx
     ;;
 
 amd)
