@@ -115,7 +115,7 @@ struct MCX_volume { // shared, read-only
     }
     void reshape(uint32_t Nx, uint32_t Ny, uint32_t Nz, uint32_t Nt = 1, T value = 0.0f) {
         size = dim4(Nx, Ny, Nz, Nt);
-        dimyz = Ny * Nz;
+        dimyz = (uint64_t)Ny * Nz;
         dimxyz = dimyz * Nx;
         dimxyzt = dimxyz * Nt;
         delete [] vol;
@@ -261,7 +261,7 @@ struct MCX_photon { // per thread
     void run(MCX_volume<int>& invol, MCX_volume<float>& outvol, MCX_medium props[], const float4 detpos[], MCX_detect& detdata, float detphotonbuffer[], MCX_rand& ran, const MCX_param& gcfg) {
         lastvoxelidx = invol.index(ipos.x, ipos.y, ipos.z, 0);
 
-        if (lastvoxelidx < 0 && skip(invol) < 0.f) { //< widefield source, launch position is outside of the domain bounding box
+        if (lastvoxelidx < 0 && (skip(invol) < 0.f || lastvoxelidx < 0)) { //< widefield source, launch position is outside of the domain bounding box
             mediaid = 0; // reset stale mediaid so caller's tissue-entry check is not misled
             return; // ray never intersect with the voxel domain bounding box
         }
@@ -357,7 +357,7 @@ struct MCX_photon { // per thread
         return tmin;
     }
     void save(MCX_volume<float>& outvol, int tshift, float mua, const MCX_param& gcfg) {   //< add energy loss to the enclosing voxel
-        outvol.add(gcfg.outputtype == otEnergy ? (len.w - pos.w) : (mua < FLT_EPSILON ? (len.w * len.z) : (len.w - pos.w) / mua), lastvoxelidx + tshift * outvol.dimxyz);
+        (tshift >= 0) ? outvol.add(gcfg.outputtype == otEnergy ? (len.w - pos.w) : (mua < FLT_EPSILON ? (len.w * len.z) : (len.w - pos.w) / mua), lastvoxelidx + tshift * outvol.dimxyz) : PASS;
         len.w = pos.w;
         len.z = 0.f;
     }
@@ -457,7 +457,7 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
     };
     const std::map<std::string, std::function<int(float4 p, json obj)>> shapeparser = {
         {"Sphere", [](float4 p, json obj) -> int { return ((p.x - JNUM(obj, "O", 0)) * (p.x - JNUM(obj, "O", 0)) + (p.y - JNUM(obj, "O", 1)) * (p.y - JNUM(obj, "O", 1)) + (p.z - JNUM(obj, "O", 2)) * (p.z - JNUM(obj, "O", 2)) < (JVAL(obj, "R", float) * JVAL(obj, "R", float))) ? JVAL(obj, "Tag", int) : std::numeric_limits<int>::quiet_NaN(); }},
-        {"Box", [](float4 p, json obj) -> int { return !(p.x < JNUM(obj, "O", 0) || p.y < JNUM(obj, "O", 1) || p.z < JNUM(obj, "O", 2) || p.x > JNUM(obj, "O", 0) + JNUM(obj, "Size", 0) || p.x > JNUM(obj, "O", 1) + JNUM(obj, "Size", 1) || p.x > JNUM(obj, "O", 2) + JNUM(obj, "Size", 2)) ? JVAL(obj, "Tag", int) : std::numeric_limits<int>::quiet_NaN(); }},
+        {"Box", [](float4 p, json obj) -> int { return !(p.x < JNUM(obj, "O", 0) || p.y < JNUM(obj, "O", 1) || p.z < JNUM(obj, "O", 2) || p.x > JNUM(obj, "O", 0) + JNUM(obj, "Size", 0) || p.y > JNUM(obj, "O", 1) + JNUM(obj, "Size", 1) || p.z > JNUM(obj, "O", 2) + JNUM(obj, "Size", 2)) ? JVAL(obj, "Tag", int) : std::numeric_limits<int>::quiet_NaN(); }},
         {"XLayers", [](float4 p, json obj) -> int { return (p.x >= JVAL(obj, 0, float) && p.x <= JVAL(obj, 1, float)) ? obj[2].get<int>() : std::numeric_limits<int>::quiet_NaN(); }},
         {"YLayers", [](float4 p, json obj) -> int { return (p.y >= JVAL(obj, 0, float) && p.y <= JVAL(obj, 1, float)) ? obj[2].get<int>() : std::numeric_limits<int>::quiet_NaN(); }},
         {"ZLayers", [](float4 p, json obj) -> int { return (p.z >= JVAL(obj, 0, float) && p.z <= JVAL(obj, 1, float)) ? obj[2].get<int>() : std::numeric_limits<int>::quiet_NaN(); }},
@@ -467,7 +467,7 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
                 const float4 v0((JNUM(obj, "C1", 0) - JNUM(obj, "C0", 0)) / sqrtf(d0), (JNUM(obj, "C1", 1) - JNUM(obj, "C0", 1)) / sqrtf(d0), (JNUM(obj, "C1", 2) - JNUM(obj, "C0", 2)) / sqrtf(d0), 0.f);
                 float4 p0((p.x - JNUM(obj, "C0", 0)), (p.y - JNUM(obj, "C0", 1)), (p.z - JNUM(obj, "C0", 2)), d0);
                 float d = v0.x * p0.x + v0.y * p0.y + v0.z * p0.z;
-                return (d <= p0.w && d >= 0.f && p0.x * p0.x + p0.y * p0.y + p0.z * p0.z - d * d <= JVAL(obj, "R", float) * JVAL(obj, "R", float)) ? JVAL(obj, "Tag", int) : std::numeric_limits<int>::quiet_NaN();
+                return (d * d <= p0.w && d >= 0.f && p0.x * p0.x + p0.y * p0.y + p0.z * p0.z - d * d <= JVAL(obj, "R", float) * JVAL(obj, "R", float)) ? JVAL(obj, "Tag", int) : std::numeric_limits<int>::quiet_NaN();
             }
         }
     };
@@ -546,7 +546,9 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
                 }
 
                 for (const auto& obj : cfg["Shapes"])   //< rasterize each shape construct to a voxelated grid
-                    if (shapeparser.find(obj.begin().key()) != shapeparser.end()) {
+                    if (!obj.is_object() || obj.empty()) {
+                        throw std::runtime_error("each Shapes element must be a non-empty object");
+                    } else if (shapeparser.find(obj.begin().key()) != shapeparser.end()) {
 #ifndef __NVCOMPILER
                         _PRAGMA_OMPACC_HOST_LOOP(collapse(2))
 #endif
@@ -574,7 +576,7 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
                 const std::string dtype = cfg["Shapes"].value("_ArrayType_", "int32");
 
                 if (cfg["Shapes"].contains("_ArrayData_")) {  //< use get<vector<int>> to avoid instantiating get<vector<uint8_t>> which pulls in binary_t on nvptx LTO
-                    std::copy_n(cfg["Shapes"]["_ArrayData_"].get<std::vector<int>>().data(), domain.dimxyz, domain.vol);
+                    (cfg["Shapes"]["_ArrayData_"].size() == domain.dimxyz) ? (void)std::copy_n(cfg["Shapes"]["_ArrayData_"].get<std::vector<int>>().data(), domain.dimxyz, domain.vol) : throw std::runtime_error("_ArrayData_ length does not match _ArraySize_");
                 } else if (cfg["Shapes"].contains("_ArrayZipData_")) {  //< decompress then reinterpret raw bytes as native element type and copy to int
                     auto& zdata = cfg["Shapes"]["_ArrayZipData_"];
                     const auto zvec = zdata.is_string() ? zdata.get<std::string>() : std::string {};
@@ -590,7 +592,7 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
                     }
 
                     zmat_decode(zbuf.size(), zbuf.data(), &outlen, &outbuf, cfg["Shapes"].value("_ArrayZipType_", "zlib") == "gzip" ? zmGzip : zmZlib, &r);
-#define CP(T) (std::copy((T*)outbuf, (T*)outbuf + domain.dimxyz, domain.vol), 0)
+#define CP(T) ((outlen < domain.dimxyz * sizeof(T)) ? (zmat_free(&outbuf), throw std::runtime_error("_ArrayZipData_ is invalid or shorter than _ArraySize_")) : (void)std::copy((T*)outbuf, (T*)outbuf + domain.dimxyz, domain.vol), 0)
                     (void)(dtype == "uint8" ? CP(uint8_t) : (dtype == "int8" ? CP(int8_t) : (dtype == "uint16" ? CP(uint16_t) : (dtype == "int16" ? CP(int16_t) : (dtype == "uint32" ? CP(uint32_t) : CP(int32_t))))));
 #undef CP
                     zmat_free(&outbuf);
@@ -606,8 +608,8 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
         const int8_t neighbors[26][3] = {{-1, -1, -1}, {0, -1, -1}, {1, -1, -1}, {-1, 0, -1}, {0, 0, -1}, {1, 0, -1}, {-1, 1, -1}, {0, 1, -1}, {1, 1, -1}, {-1, -1, 0}, {0, -1, 0}, {1, -1, 0}, {-1, 0, 0}, {1, 0, 0}, {-1, 1, 0}, {0, 1, 0}, {1, 1, 0}, {-1, -1, 1}, {0, -1, 1}, {1, -1, 1}, {-1, 0, 1}, {0, 0, 1}, {1, 0, 1}, {-1, 1, 1}, {0, 1, 1}, {1, 1, 1}};
 
         for (const auto& det : detectors) {
-            float radius = det["R"].get<float>();
-            float4 detpos = {det["Pos"][0].get<float>(), det["Pos"][1].get<float>(), det["Pos"][2].get<float>(), 0.f};
+            float radius = det.at("R").get<float>();
+            float4 detpos = {det.at("Pos").at(0).get<float>(), det.at("Pos").at(1).get<float>(), det.at("Pos").at(2).get<float>(), 0.f};
 
             for (float iz = -radius - 1.f + detpos.z; iz <= radius + 1.f + detpos.z; iz += 0.5f) /*search in a cube with edge length 2*R+3*/
                 for (float iy = -radius - 1.f + detpos.y; iy <= radius + 1.f + detpos.y; iy += 0.5f)
@@ -618,11 +620,11 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
                             continue;
                         }
 
-                        if ((short)ix * (short)iy * (short)iz == 0 || (short)ix == (short)domain.size.x || (short)iy == (short)domain.size.y || (short)iz == (short)domain.size.z) { // if on bbx, mark as det
+                        if ((short)ix * (short)iy * (short)iz == 0 || (short)ix == (short)domain.size.x - 1 || (short)iy == (short)domain.size.y - 1 || (short)iz == (short)domain.size.z - 1) { // if on bbx, mark as det
                             domain.mask(domain.get(idx1d) | DET_MASK, idx1d);
                         } else { // inner voxels, must have 1 neighbor is 0
                             for (int i = 0; i < 26; i++)
-                                if ((domain.get(idx1d + domain.index(neighbors[i][0], neighbors[i][1], neighbors[i][2])) & MED_MASK) == 0) {
+                                if ((domain.get(idx1d + neighbors[i][0] * (int)domain.dimyz + neighbors[i][1] * (int)domain.size.z + neighbors[i][2]) & MED_MASK) == 0) {
                                     domain.mask((domain.get(idx1d) | DET_MASK), idx1d);
                                     break;
                                 }
@@ -686,7 +688,7 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
     }
     void savedetphoton(MCX_detect& detdata, const MCX_param& gcfg, std::string outputfile = "") {  //< save output detected photon data to a JData (https://neurojson.org/jdata) binary json file
         json bdetpfile = {{"MCXData", {
-                    {"Info", {{"Version", 1}, {"MediaNum", gcfg.mediumnum}, {"DetNum", gcfg.detnum}, {"ColumnNum", detdata.detphotondatalen}, {"TotalPhoton", detdata.detphotondatalen}, {"DetectedPhoton", detdata.detectedphoton}, {"SavedPhoton", detdata.savedcount()}, {"LengthUnit", gcfg.unitinmm}} },
+                    {"Info", {{"Version", 1}, {"MediaNum", gcfg.mediumnum}, {"DetNum", gcfg.detnum}, {"ColumnNum", detdata.detphotondatalen}, {"TotalPhoton", cfg["Session"]["Photons"]}, {"DetectedPhoton", detdata.detectedphoton}, {"SavedPhoton", detdata.savedcount()}, {"LengthUnit", gcfg.unitinmm}} },
                     {
                         "PhotonRawData", {{"_ArraySize_", {detdata.savedcount(), detdata.detphotondatalen}},
                             {"_ArrayType_", "single"}, {"_ArrayData_", std::vector<float>(detdata.detphotondata, detdata.detphotondata + (detdata.savedcount() * detdata.detphotondatalen))}
@@ -726,9 +728,9 @@ std::pair<double, double> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volum
     const uint64_t nphoton = cfg["Session"].value("Photons", 1000000);
     const dim4 seeds = {(uint32_t)std::rand(), (uint32_t)std::rand(), (uint32_t)std::rand(), (uint32_t)std::rand()};  //< TODO: need to implement per-thread ran object
     const float4 pos = {cfg["Optode"]["Source"]["Pos"][0].get<float>(), cfg["Optode"]["Source"]["Pos"][1].get<float>(), cfg["Optode"]["Source"]["Pos"][2].get<float>(), 1.f};
-    const float4 dir = {cfg["Optode"]["Source"]["Dir"][0].get<float>(), cfg["Optode"]["Source"]["Dir"][1].get<float>(), cfg["Optode"]["Source"]["Dir"][2].get<float>(), 0.f};
-    MCX_rand ran(seeds.x, seeds.y, seeds.z, seeds.w);
-    MCX_photon p(pos, dir, ran, gcfg);
+    float4 dir = {cfg["Optode"]["Source"]["Dir"][0].get<float>(), cfg["Optode"]["Source"]["Dir"][1].get<float>(), cfg["Optode"]["Source"]["Dir"][2].get<float>(), 0.f};
+    float dirlen = sqrtf(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);  //< normalize Dir; a zero or non-finite Dir/Pos would never terminate
+    dir = (dirlen > 0.f && std::isfinite(dirlen) && std::isfinite(pos.x + pos.y + pos.z)) ? float4(dir.x / dirlen, dir.y / dirlen, dir.z / dirlen, 0.f) : throw std::runtime_error("Optode.Source.Pos must be finite and Dir must be a non-zero vector");
 #ifdef _OPENACC
     int ppathlen = detdata.ppathlen;
     (void)ppathlen;
@@ -742,11 +744,11 @@ std::pair<double, double> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volum
 
     _PRAGMA_OMPACC_COPYIN(pos, dir, seeds, gcfg, inputvol) _PRAGMA_OMPACC_COPYIN(prop[0:gcfg.mediumnum], detpos[0:gcfg.detnum], inputvol.vol[0:inputvol.dimxyzt])
     _PRAGMA_OMPACC_COPY(outputvol, detdata, energyescape[0:1], energytotal[0:1]) _PRAGMA_OMPACC_COPY(outputvol.vol[0:outputvol.dimxyzt], detdata.detphotondata[0:totaldetphotondatalen])
-    _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, firstprivate(detphotonbuffer[0:ppathlen]), firstprivate(ran, p))
+    _PRAGMA_OMPACC_GPU_LOOP(gridsize, blocksize, deviceid, firstprivate(detphotonbuffer[0:ppathlen]), )
 #elif defined(_OPENACC)  // OpenACC reduction does not support array sections; use atomic in body
-    _PRAGMA_OMPACC_HOST_LOOP(firstprivate(ran, p))
+    _PRAGMA_OMPACC_HOST_LOOP()
 #else
-    _PRAGMA_OMPACC_HOST_LOOP(reduction(+: energyescape[0:1]) reduction(+: energytotal[0:1]) firstprivate(ran, p))
+    _PRAGMA_OMPACC_HOST_LOOP(reduction(+: energyescape[0:1]) reduction(+: energytotal[0:1]))
 #endif
 
     for (uint64_t i = 0; i < nphoton; i++) {
@@ -758,8 +760,9 @@ std::pair<double, double> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volum
 #else
         memset(detphotonbuffer, 0, sizeof(float) * detdata.ppathlen * issavedet);
 #endif
-        ran.reseed(seeds.x ^ i, seeds.y | i, seeds.z ^ i, seeds.w | i);
-        float launchweight = p.launch(pos, dir, ran, gcfg);
+        MCX_rand ran(seeds.x ^ i, seeds.y | i, seeds.z ^ i, seeds.w | i);   //< per-photon RNG and photon state are private by construction
+        MCX_photon p(pos, dir, ran, gcfg);
+        const float launchweight = p.len.w;
         p.run<isreflect, issavedet>(inputvol, outputvol, prop, detpos, detdata, detphotonbuffer, ran, gcfg);
 
         if ((p.mediaid & MED_MASK) != 0) {
@@ -786,23 +789,25 @@ int MCX_run_simulation(char* argv[], int argn = 1, int nlhs = 0, void* plhs[] = 
     std::vector<float> srcparam2 = io.cfg["Optode"]["Source"].value("Param2", std::vector<float> {0.f, 0.f, 0.f, 0.f});
     const MCX_param gcfg = {
         /*.tstart*/ JNUM(io.cfg, "Forward", "T0"), /*.tend*/ JNUM(io.cfg, "Forward", "T1"), /*.rtstep*/ 1.f / JNUM(io.cfg, "Forward", "Dt"), /*.unitinmm*/ io.cfg["Domain"].value("LengthUnit", 1.f),
-        /*.maxgate*/ (int)((JNUM(io.cfg, "Forward", "T1") - JNUM(io.cfg, "Forward", "T0")) / JNUM(io.cfg, "Forward", "Dt") + 0.5f), /*.isreflect*/ io.cfg["Session"].value("DoMismatch", 1),
+        /*.maxgate*/ std::max(1, (int)((JNUM(io.cfg, "Forward", "T1") - JNUM(io.cfg, "Forward", "T0")) / JNUM(io.cfg, "Forward", "Dt") + 0.5f)), /*.isreflect*/ io.cfg["Session"].value("DoMismatch", 1),
         /*.isnormalized*/ io.cfg["Session"].value("DoNormalize",  1), /*.issavevol*/ io.cfg["Session"].value("DoSaveVolume", 1),
         /*.issavedet*/ io.cfg["Session"].value("DoPartialPath", 1), /*.savedetflag*/ io.cfg["Session"].value("SaveDetFlag", (dpDetID + dpPPath)),
         /*.mediumnum*/ (int)io.cfg["Domain"]["Media"].size(), /*.outputtype*/ (int)MCX_outputtype.find(io.cfg["Session"].value("OutputType", "x")[0]),
         /*.detnum*/ (io.cfg["Optode"].contains("Detector") ? (int)io.cfg["Optode"]["Detector"].size() : 0), /*.maxdetphoton*/ io.cfg["Session"].value("MaxDetPhoton", 1000000),
         /*.srctype*/ (MCX_sourcetypeid)std::distance(MCX_sourcetype.begin(), std::find(MCX_sourcetype.begin(), MCX_sourcetype.end(), io.cfg["Optode"]["Source"].value("Type", "pencil"))),
-        /*.srcparam1*/ {srcparam1[0], srcparam1[1], srcparam1[2], srcparam1[3]}, /*.srcparam2*/ {srcparam2[0], srcparam2[1], srcparam2[2], srcparam2[3]}
+        /*.srcparam1*/ {(srcparam1.resize(4), srcparam1[0]), srcparam1[1], srcparam1[2], srcparam1[3]}, /*.srcparam2*/ {(srcparam2.resize(4), srcparam2[0]), srcparam2[1], srcparam2[2], srcparam2[3]}
     };
     MCX_volume<int> inputvol = io.domain;
     MCX_volume<float> outputvol(inputvol.size.x, inputvol.size.y, inputvol.size.z, gcfg.maxgate);
     MCX_detect detdata(gcfg);
-    MCX_medium* prop = new MCX_medium[gcfg.mediumnum];
+    MCX_medium* prop = (std::any_of(inputvol.vol, inputvol.vol + inputvol.dimxyz, [&](int v) {
+        return (int)(v & MED_MASK) >= gcfg.mediumnum;
+    }) || (gcfg.issavedet && (gcfg.savedetflag & dpPPath) && gcfg.mediumnum > 11)) ? throw std::runtime_error("domain labels must be less than the Media count; at most 10 tissue types when saving partial paths") : new MCX_medium[gcfg.mediumnum];
     float4* detpos = new float4[gcfg.detnum];
 
     for (int i = 0; i < gcfg.mediumnum; i++) {
         srcparam1 = io.cfg["Domain"]["Media"][i].is_array() ? io.cfg["Domain"]["Media"][i].get<std::vector<float>>() : std::vector<float> {JNUM(io.cfg["Domain"]["Media"], i, "mua")* gcfg.unitinmm, JNUM(io.cfg["Domain"]["Media"], i, "mus")* gcfg.unitinmm, io.cfg["Domain"]["Media"][i]["g"], io.cfg["Domain"]["Media"][i]["n"]};
-        prop[i] = MCX_medium(srcparam1[0], srcparam1[1], srcparam1[2], srcparam1[3]);
+        prop[i] = MCX_medium(srcparam1.at(0), srcparam1.at(1), srcparam1.at(2), srcparam1.at(3));
     }
 
     for (int i = 0; i < gcfg.detnum; i++) {
