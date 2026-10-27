@@ -1,8 +1,8 @@
 #!/bin/sh
 
 fail=0
-EXE=umcx
-MCX=../bin/$EXE
+EXE=${EXE:-umcx}          # EXE=umcx_amd ./testumcx.sh tests bin/umcx_amd
+MCX=${UMCX:-../bin/$EXE}  # UMCX=/path/to/umcx ./testumcx.sh tests any binary
 if [ ! -f "$MCX" ]; then MCX=`which $EXE`; fi
 if [ -z "$MCX" ]; then echo "can not find $EXE"; exit 100; fi
 
@@ -152,7 +152,7 @@ if [ -z "$temp" ]; then echo "fail to run spherebox benchmark"; fail=$((fail+1))
 #temp=`"$MCX" --bench cube60 -D M -S 0 -d 0 $PARAM -n 1e2 | grep -o -E 'saved [6-9][0-9]+ trajectory'`
 #if [ -z "$temp" ]; then echo "fail to save trajectory data via -D M"; fail=$((fail+1)); else echo "ok"; fi
 
-temp=`which valgrind 2> /dev/null`
+temp=`[ -z "$NOVALGRIND" ] && which valgrind 2> /dev/null`
 if [ ! -z "$temp" ]; then
     echo "test memory access errors using valgrind ... "
     temp=`valgrind --log-fd=1 "$MCX" --bench cube60b -n 1e4`

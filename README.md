@@ -480,6 +480,8 @@ compilation target. Status is tested on Linux x86-64.
 
 - **Architecture selection** (`GFX`): Override with e.g.
   `make amdclang GFX=gfx1030` or `cmake -DGFX=gfx1030`. Default is `gfx906`.
+  A comma-separated list builds one binary for several GPUs, e.g.
+  `make amdclang GFX=gfx906,gfx90a,gfx1030,gfx1100`.
 
 ### Portability summary
 
@@ -1098,6 +1100,33 @@ The test suite covers:
 - Heterogeneous domain (spherebox)
 - Skin vessel with `unitinmm` scaling (skinvessel)
 - Memory safety (valgrind, if installed)
+
+`EXE=umcx_amd bash testumcx.sh` tests `../bin/umcx_amd`, and `UMCX=/path/to/umcx bash testumcx.sh`
+tests any binary.
+
+### Unit tests, fuzzing and code coverage
+
+`test/Makefile` builds three more kinds of tests. They compile `src/umcx.cpp`
+directly into the test program (with `-Dmain=umcx_main`), so every internal class
+can be tested without any change to the source:
+
+```bash
+cd test
+make unit          # unit tests of every class: RNG, volume, detector buffer, photon
+                   # transport physics, JSON/shape parsing, the kernel and the C API
+make unitasan      # the same, with AddressSanitizer and UndefinedBehaviorSanitizer
+make fuzzrun       # libFuzzer (needs clang) on JSON/BJData inputs, FUZZTIME=60 seconds
+make fuzzreplay    # replays the seed corpus in test/fuzz/corpus with any compiler
+make coverage      # gcov line coverage of src/umcx.cpp (gcovr, or lcov+genhtml)
+```
+
+The unit tests check the physics against analytic results (Beer-Lambert
+attenuation, Fresnel reflection, Snell's law, the Henyey-Greenstein mean cosine,
+energy conservation with and without boundary reflection), besides the parsers
+and the file outputs. The fuzzer feeds arbitrary JSON or BJData input through
+`MCX_run_simulation()`, the entry point the MATLAB mex file uses; it only clamps
+the parameters that make a run slow (domain size, photon count, time gates).
+Inputs that once crashed or hung umcx are kept as `test/fuzz/corpus/regress_*`.
 
 ---
 

@@ -73,12 +73,69 @@ jobs:
           cd test
           ./testumcx.sh
 
+      - name: Run unit tests (Linux and macOS)
+        if: ${{ runner.os != 'Windows' }}
+        run: |
+          CXX=g++
+          [[ "${{ matrix.os }}" == "macos-15-intel" ]] && CXX=g++-14
+          [[ "${{ matrix.os }}" == "macos-14" ]] && CXX=g++-13
+          make -C test unit CXX=$CXX
+
       - name: CMake OpenACC CPU (Linux)
         if: ${{ runner.os == 'Linux' }}
         run: |
           cmake -B build_omp_acc -S src -DBACKEND=OMP -DACC=ON
           cmake --build build_omp_acc
           cd test && ./testumcx.sh
+
+  unit_fuzz_coverage_test:
+    name: Unit tests, sanitizers, fuzzing and coverage
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y clang
+          pip install gcovr
+
+      - name: Unit tests
+        run: make -C test unit
+
+      - name: Unit tests with AddressSanitizer and UndefinedBehaviorSanitizer
+        run: make -C test unitasan
+
+      - name: Fuzz the input parser and simulation for 2 minutes
+        run: make -C test fuzzrun FUZZCXX=clang++ FUZZTIME=120
+
+      - name: Upload fuzzer crash reproducers
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: test/build/fuzzcrash/
+
+      - name: Code coverage
+        run: |
+          make -C test coverage
+          echo '### umcx.cpp line coverage' >> $GITHUB_STEP_SUMMARY
+          gcovr --root . --filter "$PWD/src/umcx.cpp" --print-summary test/build/cov | tail -3 >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            test/build/coverage*.html
+            test/build/coverage.xml
 
   gcc_nvptx_gpu_offloading_test:
     name: NVIDIA GPU gcc nvptx test
