@@ -2,7 +2,7 @@
 
 * Copyright (C) 2024-2026  Qianqian Fang <q.fang at neu.edu>
 * License: GNU General Public License version 3 (GPL v3), see LICENSE.txt
-* Version: 0.5 （Boxer Crab)
+* Version: 0.5 (Boxer Crab)
 * Website: https://mcx.space/umcx
 * Github: https://github.com/fangq/umcx
 * Acknowledgement: This project is part of the [MCX project](https://mcx.space)
