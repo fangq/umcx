@@ -3,7 +3,8 @@
 #
 #   docker build --build-arg WITH_ROCM=1 -t umcx-linux-release-builder .github/linux_release_builder
 #
-#   # AMD: bin/umcx_amd and its runtime libraries in lib/
+#   # AMD: bin/umcx_amd and its runtime libraries in lib/ (not in the release package: the
+#   # bundled LLVM offload runtime, libomptarget, alone is 50 MB)
 #   docker run --rm -v $PWD:/src -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
 #       umcx-linux-release-builder bash .github/linux_release_builder/build_umcx.sh amd
 #
@@ -95,8 +96,13 @@ amd)
         fi
     done
     strip --strip-unneeded lib/*
-    for f in lib/*; do patchelf --set-rpath '$ORIGIN' "$f"; done
-    patchelf --set-rpath '$ORIGIN/../lib' bin/umcx_amd
+    # the executable's DT_RPATH (not RUNPATH) also finds the dependencies of the bundled
+    # libraries that have no RUNPATH; adding one to those makes patchelf append a 2 MB aligned
+    # segment, so only the RUNPATHs the ROCm libraries already have are replaced, in place
+    for f in lib/*; do
+        if readelf -d "$f" | grep -q RUNPATH; then patchelf --set-rpath '$ORIGIN' "$f"; fi
+    done
+    patchelf --force-rpath --set-rpath '$ORIGIN/../lib' bin/umcx_amd
     ls -la lib
     ;;
 

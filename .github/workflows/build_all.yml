@@ -16,11 +16,7 @@ env:
 
 jobs:
   linux_release:
-    name: Linux portable binary (${{ matrix.target }})
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [nvc, amd]
+    name: Linux portable binary (nvc)
     runs-on: ubuntu-22.04
     defaults:
       run:
@@ -32,18 +28,17 @@ jobs:
           submodules: 'recursive'
       - name: Free disk space
         run: |
-          # the HPC SDK installs to 17 GB and the ROCm image is several GB
+          # the HPC SDK installs to 17 GB
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h /
-      - name: Cache HPC SDK with CUDA (nvc only)
-        if: ${{ matrix.target == 'nvc' }}
+      - name: Cache HPC SDK with CUDA
         id: cache-hpc
         uses: actions/cache@v4
         with:
           path: /opt/nvidia/hpc_sdk
           key: nvhpc-${{ env.NVHPC_VERSION }}-linux-gpu-slim-v1
-      - name: Install HPC SDK (nvc only, if not cached)
-        if: ${{ matrix.target == 'nvc' && steps.cache-hpc.outputs.cache-hit != 'true' }}
+      - name: Install HPC SDK (if not cached)
+        if: ${{ steps.cache-hpc.outputs.cache-hit != 'true' }}
         run: |
           curl -fsSL https://developer.download.nvidia.com/hpc-sdk/ubuntu/DEB-GPG-KEY-NVIDIA-HPC-SDK \
             | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg
@@ -62,10 +57,9 @@ jobs:
           du -sh /opt/nvidia/hpc_sdk
       - name: Build the manylinux_2_28 release builder
         run: |
-          docker build --build-arg WITH_ROCM=${{ matrix.target == 'amd' && '1' || '0' }} \
+          docker build --build-arg WITH_ROCM=0 \
               -t umcx-linux-release-builder .github/linux_release_builder
       - name: Build bin/umcx with nvc++ (manylinux_2_28)
-        if: ${{ matrix.target == 'nvc' }}
         run: |
           NV=/opt/nvidia/hpc_sdk/Linux_x86_64/${{ env.NVHPC_VERSION }}
           RUN="docker run --rm -v $PWD:/src -v $NV:$NV:ro -e NVHPC_ROOT=$NV -e HOST_UID=$(id -u) -e HOST_GID=$(id -g)"
@@ -73,18 +67,11 @@ jobs:
           $RUN umcx-linux-release-builder bash .github/linux_release_builder/build_umcx.sh localrc
           $RUN -v $PWD/build/nvhpc_localrc:$NV/compilers/bin/localrc:ro \
               umcx-linux-release-builder bash .github/linux_release_builder/build_umcx.sh nvc
-      - name: Build bin/umcx_amd with ROCm clang++ (manylinux_2_28)
-        if: ${{ matrix.target == 'amd' }}
-        run: |
-          docker run --rm -v $PWD:/src -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
-              umcx-linux-release-builder bash .github/linux_release_builder/build_umcx.sh amd
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
-          name: linux-release-${{ matrix.target }}
-          path: |
-            bin/umcx*
-            lib/
+          name: linux-release-nvc
+          path: bin/umcx
           if-no-files-found: error
 
   package:
@@ -100,22 +87,20 @@ jobs:
       - name: Download binaries
         uses: actions/download-artifact@v4
         with:
-          pattern: linux-release-*
-          merge-multiple: true
-          path: .
+          name: linux-release-nvc
+          path: bin
       - name: Create release tag
         run: perl -e "print 'RELEASE_TAG='. lc('${{ runner.os }}-${{ runner.arch }}-github-latest')" >> $GITHUB_ENV
-      - name: Test the packaged binaries on a stock Ubuntu (CPU fallback, no GPU driver)
+      - name: Test the packaged binary on a stock Ubuntu (no GPU driver)
         run: |
-          chmod +x bin/umcx bin/umcx_amd
-          ldd bin/umcx bin/umcx_amd
+          chmod +x bin/umcx
+          ldd bin/umcx
           cd bin
-          ./umcx_amd --bench cube60 -n 1e5 -S 0 -d 0
           ./umcx --bench cube60 -n 1e4 -S 0 -d 0 || echo "umcx (nvc) needs the NVIDIA driver to start"
       - name: Zip umcx
         run: |
           mkdir -p packages umcx/test
-          cp -a bin lib README.md LICENSE.txt AUTHORS.md umcx/
+          cp -a bin README.md LICENSE.txt AUTHORS.md umcx/
           cp test/testumcx.sh umcx/test/
           rm -f umcx/bin/*.bnii umcx/bin/*.jdb
           zip -FSr --symlink packages/umcx-${{ env.RELEASE_TAG }}.zip umcx
