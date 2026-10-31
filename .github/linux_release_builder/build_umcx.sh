@@ -17,6 +17,12 @@
 #       -e NVHPC_ROOT=$NV -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
 #       umcx-linux-release-builder bash .github/linux_release_builder/build_umcx.sh nvc
 #
+#   # umcxlab: umcxlab/umcx.mexa64 with the runner's MATLAB, umcxlab/umcx.mex with the runner's
+#   # Octave headers (the folder holding octave/mex.h); either may be left out, as mcxcl does
+#   docker run --rm -v $PWD:/src -v $MATLAB_ROOT:$MATLAB_ROOT:ro -e MATLAB_ROOT=$MATLAB_ROOT \
+#       -v /usr/include/octave-X.Y.Z:/octinc:ro -e OCTAVE_INCDIR=/octinc -e HOST_UID=$(id -u) \
+#       umcx-linux-release-builder bash .github/linux_release_builder/build_umcx.sh mex
+#
 # Every binary and bundled library is checked at the end: none may need a glibc newer than
 # MAX_GLIBC (2.28) or a libstdc++ newer than MAX_GLIBCXX (3.4.25, gcc 8), or the build fails.
 
@@ -32,7 +38,7 @@ ROCM=${ROCM:-/opt/rocm}
 
 # files written to the mounted checkout belong to the caller, not to root
 cleanup() {
-    [ -n "$HOST_UID" ] && chown -R "$HOST_UID:${HOST_GID:-$HOST_UID}" /src/bin /src/lib /src/build /src/src 2>/dev/null || true
+    [ -n "$HOST_UID" ] && chown -R "$HOST_UID:${HOST_GID:-$HOST_UID}" /src/bin /src/lib /src/build /src/src /src/umcxlab 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -106,8 +112,31 @@ amd)
     ls -la lib
     ;;
 
+mex)
+    # gcc 12 with OpenMP on the CPU; no Octave in the image: the mkoctfile beside this script
+    # stands in for it, as Octave's mex files link no Octave library (from mcxcl)
+    export PATH=/src/.github/linux_release_builder:$PATH
+    chmod +x .github/linux_release_builder/mkoctfile
+    rm -f umcxlab/umcx.mex umcxlab/umcx.mexa64
+    cd src
+    if [ -n "$OCTAVE_INCDIR" ]; then
+        echo "== umcxlab for Octave (headers: $OCTAVE_INCDIR)"
+        make oct MEXLINKOPT="-static-libgcc"
+    fi
+    if [ -n "$MATLAB_ROOT" ]; then
+        echo "== umcxlab for MATLAB ($MATLAB_ROOT)"
+        make mex MEX_BIN="$MATLAB_ROOT/bin/mex" MEXLINKOPT="-static-libgcc"
+    fi
+    rm -f umcx.o
+    cd ..
+    strip umcxlab/umcx.mex* 2>/dev/null || true
+    ls -la umcxlab
+    bash .github/linux_release_builder/check_glibc.sh umcxlab/umcx.mex umcxlab/umcx.mexa64
+    exit $?
+    ;;
+
 *)
-    echo "usage: build_umcx.sh localrc|nvc|amd"
+    echo "usage: build_umcx.sh localrc|nvc|amd|mex"
     exit 1
     ;;
 esac

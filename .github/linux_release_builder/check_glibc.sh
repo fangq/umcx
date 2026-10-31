@@ -2,7 +2,9 @@
 # check_glibc.sh file...: prints the newest GLIBC and GLIBCXX symbol versions each file needs,
 # and fails if any needs a glibc newer than MAX_GLIBC (2.28, manylinux_2_28) or a libstdc++
 # newer than MAX_GLIBCXX (3.4.25, the gcc 8 libstdc++ of RHEL 8, also in Ubuntu 18.04), or
-# links libgomp dynamically. Adapted from mcx; files that do not exist are skipped.
+# links libgomp dynamically. A mex file (a shared object with no program interpreter) may use
+# libgomp.so: the static libgomp.a is not position-independent, and MATLAB and Octave load a
+# libgomp of their own (as in mcx). Adapted from mcx; files that do not exist are skipped.
 
 MAX_GLIBC=${MAX_GLIBC:-2.28}
 MAX_GLIBCXX=${MAX_GLIBCXX:-3.4.25}
@@ -30,7 +32,7 @@ for f in "$@"; do
         fail=1
     fi
 
-    if echo "$needed" | grep -qE 'libgomp'; then
+    if echo "$needed" | grep -qE 'libgomp' && readelf -l "$f" 2>/dev/null | grep -q INTERP; then
         status="$status; FAIL: links libgomp dynamically"
         fail=1
     fi

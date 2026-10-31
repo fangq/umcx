@@ -67,11 +67,35 @@ jobs:
           $RUN umcx-linux-release-builder bash .github/linux_release_builder/build_umcx.sh localrc
           $RUN -v $PWD/build/nvhpc_localrc:$NV/compilers/bin/localrc:ro \
               umcx-linux-release-builder bash .github/linux_release_builder/build_umcx.sh nvc
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v2
+        with:
+          release: R2022a
+      - name: Install Octave
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends octave liboctave-dev
+      - name: Build umcxlab for MATLAB and Octave (manylinux_2_28)
+        run: |
+          # the runner's MATLAB and Octave headers, mounted read-only, as mcxcl does
+          MLROOT=$(dirname "$(dirname "$(readlink -f "$(which matlab)")")")
+          OCTINC=$(dirname "$(dirname "$(find /usr/include -path '*/octave/mex.h' | head -1)")")
+          docker run --rm -v $PWD:/src -v "$MLROOT:$MLROOT:ro" -e MATLAB_ROOT="$MLROOT" \
+              -v "$OCTINC:/octinc:ro" -e OCTAVE_INCDIR=/octinc -e HOST_UID=$(id -u) -e HOST_GID=$(id -g) \
+              umcx-linux-release-builder bash .github/linux_release_builder/build_umcx.sh mex
+          test -f umcxlab/umcx.mexa64 && test -f umcxlab/umcx.mex
+          ARCH=$(octave-cli --eval "disp(computer('arch'))")
+          mkdir -p umcxlab/octave/$ARCH
+          mv umcxlab/umcx.mex umcxlab/octave/$ARCH/
+          # it must load: called with no input it does nothing
+          octave-cli --eval "addpath('umcxlab'); umcx(); assert(exist('umcx') > 0)"
+          ls -lR umcxlab
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: linux-release-nvc
-          path: bin/umcx
+          path: |
+            bin/umcx
+            umcxlab/umcx.mexa64
+            umcxlab/octave
           if-no-files-found: error
 
   package:
@@ -88,7 +112,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: linux-release-nvc
-          path: bin
+          path: .
       - name: Create release tag
         run: perl -e "print 'RELEASE_TAG='. lc('${{ runner.os }}-${{ runner.arch }}-github-latest')" >> $GITHUB_ENV
       - name: Test the packaged binary on a stock Ubuntu (no GPU driver)
@@ -100,9 +124,9 @@ jobs:
       - name: Zip umcx
         run: |
           mkdir -p packages umcx/test
-          cp -a bin README.md LICENSE.txt AUTHORS.md umcx/
+          cp -a bin README.md LICENSE.txt AUTHORS.md umcxlab umcx/
           cp test/testumcx.sh umcx/test/
-          rm -f umcx/bin/*.bnii umcx/bin/*.jdb
+          rm -f umcx/bin/*.bnii umcx/bin/*.jdb umcx/umcxlab/*.jdb
           zip -FSr --symlink packages/umcx-${{ env.RELEASE_TAG }}.zip umcx
           unzip -l packages/umcx-${{ env.RELEASE_TAG }}.zip
       - name: Upload umcx package
@@ -155,6 +179,71 @@ jobs:
               echo "umcx.exe links a GCC runtime DLL"; exit 1
             fi
           fi
+      - name: Install Octave (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        run: brew install octave
+      - name: Install Octave 10.3 (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        run: |
+          curl --retry 3 -kL https://ftpmirror.gnu.org/octave/windows/octave-10.3.0-w64.7z --output octave_10.3.7z
+          7z x octave_10.3.7z -ooctave -y > /dev/null
+          rm -f octave_10.3.7z
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v2
+        with:
+          # the first release with a native Apple-silicon MATLAB
+          release: ${{ runner.os == 'macOS' && 'R2023b' || 'R2022a' }}
+      - name: Build umcxlab for MATLAB and Octave
+        run: |
+          cd src
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            CXX=g++-14; [[ "${{ matrix.os }}" == "macos-14" ]] && CXX=g++-13
+            GOMP=$($CXX -print-file-name=libgomp.a)
+            # link the Octave mex without a path to liboctmex: -loctmex finds this empty stub,
+            # which is dead-stripped, so the mex API resolves in the liboctmex of the running
+            # Octave, any 10+ version (from mcxcl)
+            mkdir -p octstub && echo "" | clang -dynamiclib -x c - -o "$PWD/octstub/liboctmex.dylib" -install_name @rpath/liboctmex-stub.dylib
+            make oct CXX=$CXX MEXLINKOPT="-static-libgcc -static-libstdc++ $GOMP -L$PWD/octstub -Wl,-dead_strip_dylibs"
+            # without mex's own C++ flags, which are clang's (-fobjc-arc) and g++ rejects; mex
+            # links with its Xcode clang++ setup, which leaves out g++'s libstdc++: named here
+            make mex CXX=$CXX MEXBASEFLAGS= MEXLINKOPT="-static-libgcc $($CXX -print-file-name=libstdc++.a) $GOMP -Wl,-dead_strip_dylibs"
+            rm -rf octstub
+            for f in ../umcxlab/umcx.mex*; do
+              otool -L $f
+              # only the system's libraries and MATLAB's own may remain
+              if otool -L $f | tail -n +2 | grep -vE '^\s+/usr/lib/|^\s+/System/|@rpath/lib(mx|mex|mat)\.dylib'; then
+                echo "$f links a library of the build machine"; exit 1
+              fi
+            done
+            OCTCLI=octave-cli
+          else
+            # Octave's mex with Octave's own gcc, matching its MinGW headers; MATLAB's with the
+            # MinGW gcc of the binary, through mexopts_msys2_gcc.xml (both as mcxcl does)
+            OCT="$GITHUB_WORKSPACE/octave/octave-10.3.0-w64/mingw64"
+            PATH="$OCT/bin:$PATH" make oct CXX=g++ MEXLINKOPT="-static-libgcc -static-libstdc++"
+            strip ../umcxlab/umcx.mex
+            # mex.bat called from here, not through make: there "cmd //c mex.bat" only opened
+            # an empty prompt; bash runs a .bat through cmd itself, quoting each argument.
+            # COMPFLAGS and DEFINES, which the mexopts file builds CXXFLAGS from, are given
+            # empty and MATLAB_MEX_FILE is defined in CXXFLAGS, as mcxcl's Makefile does
+            MW_MINGW64_LOC='C:\ProgramData\mingw64\mingw64' mex.bat -f mexopts_msys2_gcc.xml \
+                'CXXFLAGS=$CXXFLAGS -DMATLAB_MEX_FILE -std=c++11 -O3 -fopenmp' 'LDFLAGS=$LDFLAGS -fopenmp -static' \
+                'COMPFLAGS=' 'DEFINES=' \
+                umcx.cpp -outdir ../umcxlab
+            for f in ../umcxlab/umcx.mex*; do objdump -p $f | grep "DLL Name:"; done
+            OCTCLI="$OCT/bin/octave-cli"
+          fi
+          rm -f umcx.o
+          cd ..
+          # both mex files must be there: a build that printed nothing may have made neither
+          n=$(ls umcxlab | grep -cE '^umcx\.mex(a64|w64|maci64|maca64)?$' || true)
+          [ "$n" = 2 ] || { ls -la umcxlab; echo "a mex file is missing"; exit 1; }
+          ARCH=$("$OCTCLI" --eval "disp(regexprep(computer('arch'), 'darwin[0-9.]+-', 'darwin-'))" | tr -d '\r')
+          mkdir -p umcxlab/octave/$ARCH
+          mv umcxlab/umcx.mex umcxlab/octave/$ARCH/
+          # it must load: called with no input it does nothing
+          "$OCTCLI" --eval "addpath('umcxlab'); umcx(); assert(exist('umcx') > 0)"
+          ls -lR umcxlab
       - name: Run benchmarks and tests
         run: |
           cd bin
@@ -168,7 +257,8 @@ jobs:
         run: |
           mkdir -p packages umcx/bin umcx/test
           cp bin/umcx* umcx/bin/
-          cp -a README.md LICENSE.txt AUTHORS.md umcx/
+          cp -a README.md LICENSE.txt AUTHORS.md umcxlab umcx/
+          rm -f umcx/umcxlab/*.jdb
           cp test/testumcx.sh umcx/test/
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             7z a -tzip packages/umcx-${{ env.RELEASE_TAG }}.zip umcx
