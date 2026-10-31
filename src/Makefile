@@ -17,6 +17,8 @@ ifeq ($(OS),Windows_NT)
     ifneq ($(findstring g++,$(CXX)),)
         USERLINKFLAGS += -static-libgcc -static-libstdc++
     endif
+    # MATLAB's mex with the MinGW gcc that MW_MINGW64_LOC points to, as mcxcl does
+    MEX_BIN ?= cmd //c mex.bat -f mexopts_msys2_gcc.xml
 endif
 
 ifeq ($(ACC),on)
@@ -33,7 +35,10 @@ MEXBASELDFLAGS  = $$LDFLAGS
 MEXDIRECT       =
 MATLAB_ROOT    ?= $(patsubst %/bin/mex,%,$(realpath $(shell which $(MEX_BIN) 2>/dev/null)))
 MEXEXT         ?= mexa64
-MEXLNK          = $(MEX_BIN) CXX='$(CXX)' CXXFLAGS='$(MEXBASEFLAGS) $(CXXFLAGS) $(USERCXXFLAGS)' LDFLAGS='$(MEXBASELDFLAGS) $(CXXFLAGS)' $(SRC) -outdir $(OUTPUT_DIR)
+MEXLNK          = $(MEX_BIN) CXX='$(CXX)' CXXFLAGS='$(MEXBASEFLAGS) $(CXXFLAGS) $(USERCXXFLAGS)' LDFLAGS='$(MEXBASELDFLAGS) $(CXXFLAGS) $(MEXLINKOPT)' $(SRC) -outdir $(OUTPUT_DIR)
+# mkoctfile's own LDFLAGS are replaced when the variable is set, so they are passed on
+OCT_LDFLAGS    := $(shell mkoctfile -p LDFLAGS 2>/dev/null)
+OCTLNK          = XTRA_CXXFLAGS=' ' CXX='$(CXX)' CXXFLAGS='$(CXXFLAGS) $(USERCXXFLAGS)' LDFLAGS='$(OCT_LDFLAGS) $(CXXFLAGS) $(MEXLINKOPT)' mkoctfile --mex -DMATLAB_MEX_FILE -o $(OUTPUT_DIR)/$(BINARY).mex $(SRC)
 MEXDIRLNK       = $(CXX) $(CXXFLAGS) $(USERCXXFLAGS) -shared -fPIC -DMATLAB_MEX_FILE -I$(MATLAB_ROOT)/extern/include -o $(OUTPUT_DIR)/$(BINARY).$(MEXEXT) $(SRC)
 
 ifeq ($(MEX),1)
@@ -71,10 +76,14 @@ all: multi
 makemexdir:
 	@if test ! -d $(MEXOUTDIR); then $(MKDIR) $(MEXOUTDIR); fi
 
-mex: OUTPUT_DIR = $(MEXOUTDIR)
-mex: CXXFLAGS+=-fopenmp -foffload=disable
+mex oct: OUTPUT_DIR = $(MEXOUTDIR)
+mex oct: CXXFLAGS+=-fopenmp -foffload=disable
 mex: makemexdir
 	$(MEXLNK)
+
+# umcxlab for Octave: umcx.mex; MEXLINKOPT adds link options to both
+oct: makemexdir
+	$(OCTLNK)
 
 makedirs:
 	@if test ! -d $(OUTPUT_DIR); then $(MKDIR) $(OUTPUT_DIR); fi
