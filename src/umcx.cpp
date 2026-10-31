@@ -19,6 +19,7 @@
 #include <chrono>
 #include <set>
 #include <map>
+#include <random>
 #include "nlohmann/json.hpp"
 #define ZMAT_IMPLEMENTATION
 #include "zmat/zmat.h"
@@ -724,9 +725,9 @@ struct MCX_userio {    //< main user IO handling interface, must be isolated wit
 template<const bool isreflect, const bool issavedet>
 std::pair<double, double> MCX_kernel(json& cfg, const MCX_param& gcfg, MCX_volume<int>& inputvol, MCX_volume<float>& outputvol, float4* detpos, MCX_medium* prop, MCX_detect& detdata) {    //< main simulation core, returns {energyescape, energytotal}
     double energyescape[1] = {0.0}, energytotal[1] = {0.0};
-    std::srand(!(cfg["Session"].contains("RNGSeed")) ? 1648335518 : (cfg["Session"]["RNGSeed"].get<int>() > 0 ? cfg["Session"]["RNGSeed"].get<int>() : std::time(0)));
+    std::mt19937 hostrng(!(cfg["Session"].contains("RNGSeed")) ? 1648335518 : (cfg["Session"]["RNGSeed"].get<int>() > 0 ? cfg["Session"]["RNGSeed"].get<int>() : std::time(0)));  //< not rand(): 15 bits on Windows, other numbers on each OS
     const uint64_t nphoton = cfg["Session"].value("Photons", 1000000);
-    const dim4 seeds = {(uint32_t)std::rand(), (uint32_t)std::rand(), (uint32_t)std::rand(), (uint32_t)std::rand()};  //< TODO: need to implement per-thread ran object
+    const dim4 seeds = {(uint32_t)hostrng(), (uint32_t)hostrng(), (uint32_t)hostrng(), (uint32_t)hostrng()};  //< TODO: need to implement per-thread ran object
     const float4 pos = {cfg["Optode"]["Source"]["Pos"][0].get<float>(), cfg["Optode"]["Source"]["Pos"][1].get<float>(), cfg["Optode"]["Source"]["Pos"][2].get<float>(), 1.f};
     float4 dir = {cfg["Optode"]["Source"]["Dir"][0].get<float>(), cfg["Optode"]["Source"]["Dir"][1].get<float>(), cfg["Optode"]["Source"]["Dir"][2].get<float>(), 0.f};
     float dirlen = sqrtf(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);  //< normalize Dir; a zero or non-finite Dir/Pos would never terminate
