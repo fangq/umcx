@@ -140,7 +140,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-15-intel, windows-2022]
+        os: [macos-15, macos-15-intel, windows-2022]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -148,9 +148,16 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-      - name: Install dependencies (macos-14 only)
-        if: ${{ matrix.os == 'macos-14' }}
+      - name: Install dependencies (macos-15 only)
+        if: ${{ matrix.os == 'macos-15' }}
         run: brew install gcc@13
+      - name: Set the oldest macOS the binaries run on (macOS only)
+        if: ${{ runner.os == 'macOS' }}
+        run: |
+          # g++ and clang otherwise record the runner's macOS (15) as the oldest the binary and mex
+          # files start on; 11.0 is the first macOS on arm64, 10.15 the oldest for x86_64 (as mcx)
+          if [ "$(uname -m)" = "arm64" ]; then T=11.0; else T=10.15; fi
+          echo "MACOSX_DEPLOYMENT_TARGET=$T" >> $GITHUB_ENV
       - name: Install dependencies (Windows only)
         if: ${{ runner.os == 'Windows' }}
         run: |
@@ -160,7 +167,7 @@ jobs:
         run: |
           cd src
           if [[ "$RUNNER_OS" == "macOS" ]]; then
-            CXX=g++-14; [[ "${{ matrix.os }}" == "macos-14" ]] && CXX=g++-13
+            CXX=g++-14; [[ "${{ matrix.os }}" == "macos-15" ]] && CXX=g++-13
             # no -Bstatic on macOS: put libgomp.a ahead of the -lgomp that -fopenmp adds, and
             # drop the Homebrew dylibs that are then unused
             make CXX=$CXX USERLINKFLAGS="-static-libgcc -static-libstdc++ $($CXX -print-file-name=libgomp.a) -Wl,-dead_strip_dylibs"
@@ -197,7 +204,7 @@ jobs:
         run: |
           cd src
           if [[ "$RUNNER_OS" == "macOS" ]]; then
-            CXX=g++-14; [[ "${{ matrix.os }}" == "macos-14" ]] && CXX=g++-13
+            CXX=g++-14; [[ "${{ matrix.os }}" == "macos-15" ]] && CXX=g++-13
             GOMP=$($CXX -print-file-name=libgomp.a)
             # link the Octave mex without a path to liboctmex: -loctmex finds this empty stub,
             # which is dead-stripped, so the mex API resolves in the liboctmex of the running

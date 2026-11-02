@@ -10,7 +10,7 @@ jobs:
     name: CPU test
     strategy:
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, macos-15-intel, macos-14, windows-2022]
+        os: [ubuntu-22.04, ubuntu-24.04, macos-15-intel, macos-15, windows-2022]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -22,8 +22,8 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Install GCC (macos-14 only)
-        if: ${{ matrix.os == 'macos-14' }}
+      - name: Install GCC (macos-15 only)
+        if: ${{ matrix.os == 'macos-15' }}
         run: |
           brew install gcc@13
           g++-13 --version
@@ -42,7 +42,7 @@ jobs:
           make CXX=g++-14
 
       - name: Build binary on macOS 14
-        if: ${{ matrix.os == 'macos-14' }}
+        if: ${{ matrix.os == 'macos-15' }}
         run: |
           g++-13 --version
           cd src
@@ -78,7 +78,7 @@ jobs:
         run: |
           CXX=g++
           [[ "${{ matrix.os }}" == "macos-15-intel" ]] && CXX=g++-14
-          [[ "${{ matrix.os }}" == "macos-14" ]] && CXX=g++-13
+          [[ "${{ matrix.os }}" == "macos-15" ]] && CXX=g++-13
           make -C test unit CXX=$CXX
 
       - name: CMake OpenACC CPU (Linux)
